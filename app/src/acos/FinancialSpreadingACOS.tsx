@@ -1928,6 +1928,8 @@ function CaseTrustStrip({ caseDef, auditCount, theme }: { caseDef: CaseDefinitio
 
 type GateAction =
   | { kind: "gate2-sign" }
+  | { kind: "gate3-sign" }
+  | { kind: "gate4-sign" }
   | { kind: "mapping-accept"; field: string }
   | { kind: "mapping-override"; field: string }
   | { kind: "intake-override" };
@@ -1949,12 +1951,32 @@ function GateSignOffBar({
         <Button variant="primary" disabled={disabled} onClick={() => onAction({ kind: "gate2-sign" })}>
           Sign Gate 2 — Approve spread
         </Button>
-        <Button
-          variant="ghost"
-          disabled={disabled}
-          onClick={() => onAction({ kind: "mapping-override", field: "spread" })}
-        >
+        <Button variant="ghost" disabled={disabled} onClick={() => onAction({ kind: "mapping-override", field: "spread" })}>
           Override with reason (logged)
+        </Button>
+      </Row>
+    );
+  }
+  if (mode === "gate3-sign") {
+    return (
+      <Row gap={8} wrap>
+        <Button variant="primary" disabled={disabled} onClick={() => onAction({ kind: "gate3-sign" })}>
+          Sign Gate 3 — Approve risk assessment
+        </Button>
+        <Button variant="ghost" disabled={disabled} onClick={() => onAction({ kind: "mapping-override", field: "risk-assessment" })}>
+          Request revisions (logged)
+        </Button>
+      </Row>
+    );
+  }
+  if (mode === "gate4-sign") {
+    return (
+      <Row gap={8} wrap>
+        <Button variant="primary" disabled={disabled} onClick={() => onAction({ kind: "gate4-sign" })}>
+          Sign Gate 4 — Approve memo
+        </Button>
+        <Button variant="ghost" disabled={disabled} onClick={() => onAction({ kind: "mapping-override", field: "memo" })}>
+          Request revisions (logged)
         </Button>
       </Row>
     );
@@ -2138,6 +2160,32 @@ function makeAuditEvent(caseId: CaseId, action: GateAction): AuditEvent {
       input: "Spread draft v1 — 138/140 cells; 1 exception under review",
       reasoning: "Analyst signed Gate 2 after reviewing mapping exceptions and SOP compliance",
       output: "Gate 2 passed — Risk Agent released for ratio calculation",
+    };
+  }
+  if (action.kind === "gate3-sign") {
+    return {
+      id: `audit-${Date.now()}-gate3`,
+      caseId,
+      time: now,
+      stage: "Assessment",
+      actorKind: "human",
+      actor: "M. Chen (Risk Officer)",
+      input: "Ratio analysis — Current Ratio 0.82x, D/E 0.46x, Interest Coverage 2.73x",
+      reasoning: "Risk Officer reviewed flagged ratios against covenant schedule §3.1 — DSCR and D/E within limits; Current Ratio below 1.2x covenant flagged",
+      output: "Gate 3 passed — Memo Composer Agent released; Connector bundle attached",
+    };
+  }
+  if (action.kind === "gate4-sign") {
+    return {
+      id: `audit-${Date.now()}-gate4`,
+      caseId,
+      time: now,
+      stage: "Credit Memo",
+      actorKind: "human",
+      actor: "Sarah W. (Credit Analyst)",
+      input: "Credit memo draft v1 — connector-sourced sections (Experian, Equifax, D&B, AML/KYC, Bloomberg)",
+      reasoning: "Memo coherence reviewed — bureau citations verified against connector logs; AML/KYC attestation confirmed",
+      output: "Gate 4 passed — Decision Synthesis Agent released for committee package",
     };
   }
   if (action.kind === "mapping-accept") {
@@ -4324,14 +4372,14 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
               <RiskFormulaPanel theme={theme} />
               <Card>
                 <CardHeader trailing={<AgentTag agentId="risk" theme={theme} />}>
-                  Risk & covenant — blocked
+                  Risk & covenant — Gate 3 pending
                 </CardHeader>
                 <CardBody>
-                  <Callout tone="warning" title="Human Gate 2 required">
-                    Sign off mapping before Risk Agent calculates ratios and covenant tests.
+                  <Callout tone="warning" title="Gate 3 — Risk officer review required">
+                    Risk Agent has queued 14 ratios and 4 covenant tests. Risk officer must sign off before Memo Composer is released.
                   </Callout>
                   <GateSignOffBar
-                    mode="gate2-sign"
+                    mode="gate3-sign"
                     theme={theme}
                     onAction={(action) => appendAudit(action)}
                   />
@@ -4348,6 +4396,21 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                 theme={theme}
               />
               <CreditMemoPreview sections={caseDef.memoSections} theme={theme} />
+              <Card>
+                <CardHeader trailing={<AgentTag agentId="memo" theme={theme} />}>
+                  Gate 4 — Memo coherence review
+                </CardHeader>
+                <CardBody>
+                  <Callout tone="info" title="Memo draft ready for review">
+                    Memo Composer Agent has drafted all sections. Connector citations verified. Gate 4 sign-off releases Decision Synthesis Agent for committee package.
+                  </Callout>
+                  <GateSignOffBar
+                    mode="gate4-sign"
+                    theme={theme}
+                    onAction={(action) => appendAudit(action)}
+                  />
+                </CardBody>
+              </Card>
             </Stack>
           )}
 
