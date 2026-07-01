@@ -1878,7 +1878,7 @@ const CASES: Record<CaseId, CaseDefinition> = {
       "Mapping Agent completed 138/140 fields in 9 min. Review Agent flagged 1 outlier. Estimated review: 12 min. Agents saved ~2.5 days vs manual spread.",
     nextBestAction: "Resolve Total Assets outlier, then sign Gate 2 to release Risk Agent",
     primaryCta: "Start review",
-    defaultStage: "review",
+    defaultStage: "intake",
     trustScore: "94%",
     openExceptions: 1,
     agentTimeSaved: "~2.5 days",
@@ -1886,15 +1886,10 @@ const CASES: Record<CaseId, CaseDefinition> = {
     runtimeLog: WALMART_RUNTIME_LOG,
     mappingData: MAPPING_DATA,
     intakeDocs: [
-      { name: "10-K Annual Filing", received: true, sopRef: "§4.2.1", classification: "Annual Filing", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 1:58 AM", sizeKb: 4820 },
-      { name: "Credit Application", received: true, sopRef: "§4.2.2", classification: "Application", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 1:58 AM", sizeKb: 340 },
-      { name: "Q3 Cash Flow Stmt", received: true, sopRef: "§4.2.3", classification: "Cash Flow Statement", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 1:59 AM", sizeKb: 520 },
-      { name: "Covenant Schedule", received: true, sopRef: "§4.2.4", classification: "Covenant Schedule", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 1:59 AM", sizeKb: 180 },
-      { name: "Auditor Letter", received: true, sopRef: "§4.2.5", classification: "Auditor Letter", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 2:00 AM", sizeKb: 96 },
-      { name: "Management Representation", received: true, sopRef: "§4.2.6", classification: "Mgmt Representation", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 2:00 AM", sizeKb: 112 },
-      { name: "Intercompany Schedule", received: true, sopRef: "§4.2.7", classification: "Intercompany Schedule", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 2:01 AM", sizeKb: 204 },
-      { name: "Guarantor Financials", received: true, sopRef: "§4.2.8", classification: "Guarantor Financials", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 2:01 AM", sizeKb: 660 },
-      { name: "Collateral Appraisal", received: true, sopRef: "§4.2.9", classification: "Appraisal Report", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 2:02 AM", sizeKb: 1240 },
+      { name: "WLBOR", received: true, sopRef: "§4.2.2", classification: "Credit Application", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 1024 },
+      { name: "WLBBSHEET", received: true, sopRef: "§4.2.1", classification: "Balance Sheet", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 700 },
+      { name: "WLBIncome", received: true, sopRef: "§4.2.3", classification: "Income Statement", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 500 },
+      { name: "WLBCashFR", received: true, sopRef: "§4.2.4", classification: "Cash-Flow Report", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 500 },
     ],
     connectorFeeds: WALMART_CONNECTORS,
     memoSections: WALMART_MEMO_SECTIONS,
@@ -2104,7 +2099,7 @@ const CASE_ROWS: CaseRowData[] = [
 function caseRouteForRowId(rowId: string): { caseId: CaseId; stage: StageId } {
   if (rowId.startsWith("NRT")) return { caseId: "northern-retail", stage: "intake" };
   if (rowId.startsWith("WMT") || rowId.startsWith("CHY") || rowId.startsWith("TRC")) {
-    return { caseId: "walmart", stage: "review" };
+    return { caseId: "walmart", stage: "intake" };
   }
   if (rowId.startsWith("AWM") || rowId.startsWith("VNT") || rowId.startsWith("HRZ") || rowId.startsWith("MBE") || rowId.startsWith("SXT")) {
     return { caseId: "walmart", stage: "assessment" };
@@ -2731,25 +2726,40 @@ function deriveCaseProgress(
   caseId: CaseId,
   signed: Set<GateSignKind>,
   remainingExceptions: number,
-  opts?: { receivedCount?: number; totalDocs?: number; northernUnlocked?: boolean },
+  opts?: { receivedCount?: number; totalDocs?: number; northernUnlocked?: boolean; forceIntakeGate?: boolean },
 ): CaseProgress {
   const receivedCount = opts?.receivedCount ?? caseDef.intakeDocs.filter((d) => d.received).length;
   const totalDocs = opts?.totalDocs ?? caseDef.intakeDocs.length;
   const northernUnlocked = opts?.northernUnlocked ?? false;
+  const forceIntakeGate = opts?.forceIntakeGate ?? false;
 
-  if (caseId === "northern-retail" && !northernUnlocked) {
+  if (!signed.has("gate1-sign") && forceIntakeGate && (caseId === "walmart" || (caseId === "northern-retail" && !northernUnlocked))) {
     const missing = totalDocs - receivedCount;
+    if (caseId === "northern-retail" && missing > 0) {
+      return {
+        gateLabel: "Gate 1 blocked",
+        gateTone: "deleted",
+        orchestratorStatus: `${receivedCount}/${totalDocs} documents received — extraction pipeline held`,
+        nextBestAction: `Receive ${missing} missing document(s), then mark ingestion complete`,
+        primaryCta: "Upload documents",
+        primaryStage: "intake",
+        statusLabel: "Blocked",
+      };
+    }
     return {
-      gateLabel: "Gate 1 blocked",
-      gateTone: "deleted",
-      orchestratorStatus: `${receivedCount}/${totalDocs} documents received — extraction pipeline held`,
+      gateLabel: "Gate 1 pending",
+      gateTone: "warning",
+      orchestratorStatus:
+        missing > 0
+          ? `${receivedCount}/${totalDocs} documents received — extraction pipeline held`
+          : "All documents received — mark ingestion complete to release extraction",
       nextBestAction:
         missing > 0
-          ? `Receive ${missing} missing document(s), then sign Gate 1`
-          : "All documents received — sign Gate 1 to release pipeline",
-      primaryCta: missing > 0 ? "Upload documents" : "Sign Gate 1",
+          ? `Upload ${missing} remaining document(s), then mark ingestion complete`
+          : "Mark ingestion complete to release extraction pipeline",
+      primaryCta: missing > 0 ? "Upload documents" : "Mark Complete",
       primaryStage: "intake",
-      statusLabel: "Blocked",
+      statusLabel: "In Progress",
     };
   }
   if (signed.has("gate5-sign")) {
@@ -5297,8 +5307,8 @@ function CaseSwitcher({
   subtitles: Record<CaseId, string>;
 }) {
   const items: { id: CaseId; label: string }[] = [
-    { id: "walmart", label: "Walmart Inc." },
-    { id: "northern-retail", label: "Northern Retail LLC" },
+    { id: "walmart", label: CASES.walmart.title },
+    { id: "northern-retail", label: CASES["northern-retail"].title },
   ];
   return (
     <Row gap={8} wrap>
@@ -5679,6 +5689,325 @@ function TrustInspector({
   );
 }
 
+function caseDisplayTitle(caseId: CaseId): string {
+  return caseId === "walmart" ? "Walmart Inc." : "Northern Retail LLC";
+}
+
+function caseDisplayCaseId(caseId: CaseId): string {
+  return caseId === "walmart" ? "CS#001ABP" : "NRTL-REV-2025";
+}
+
+function formatDocSize(sizeKb: number): string {
+  if (sizeKb >= 1024) return `${Math.round(sizeKb / 1024)} MB`;
+  return `${sizeKb} KB`;
+}
+
+function formatDocCountLabel(received: number, total: number): string {
+  return `${String(received).padStart(2, "0")}/${String(total).padStart(2, "0")} Documents Uploaded`;
+}
+
+function StatusDotBadge({
+  label,
+  tone,
+}: {
+  label: string;
+  tone: "info" | "success" | "warning";
+}) {
+  const colors = { info: "#0A5AF5", success: "#1F8A65", warning: "#C08532" };
+  const bg = { info: "#E8F0FE", success: "#E8F5EF", warning: "#FFF4E5" };
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        padding: "2px 8px",
+        borderRadius: 4,
+        fontSize: 11,
+        fontWeight: 500,
+        background: bg[tone],
+        color: colors[tone],
+      }}
+    >
+      <span style={{ fontSize: 8 }}>●</span>
+      {label}
+    </span>
+  );
+}
+
+function CollapsibleSection({
+  title,
+  children,
+  defaultOpen = false,
+  theme,
+}: {
+  title: string;
+  children?: ReactNode;
+  defaultOpen?: boolean;
+  theme: FigmaTheme;
+}) {
+  const [open, setOpen] = useCanvasState<boolean>(`collapse-${title}`, defaultOpen);
+  return (
+    <div style={{ borderTop: `1px solid ${theme.stroke.tertiary}` }}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          width: "100%",
+          padding: "10px 0",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          fontFamily: "Inter, sans-serif",
+          fontSize: 12,
+          fontWeight: 600,
+          color: theme.text.primary,
+        }}
+      >
+        {title}
+        <span style={{ fontSize: 10, color: theme.text.tertiary }}>{open ? "▾" : "▸"}</span>
+      </button>
+      {open && children && <div style={{ paddingBottom: 12 }}>{children}</div>}
+    </div>
+  );
+}
+
+function CollapsiblePipelineStepper({
+  steps,
+  theme,
+}: {
+  steps: PipelineStep[];
+  theme: FigmaTheme;
+}) {
+  const [expanded, setExpanded] = useCanvasState<boolean>("pipelineStepperExpanded", true);
+  return (
+    <div>
+      <Row align="center" justify="space-between" style={{ padding: "0 16px" }}>
+        <div style={{ flex: 1 }} />
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          aria-label={expanded ? "Collapse pipeline" : "Expand pipeline"}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            fontSize: 12,
+            color: theme.text.tertiary,
+            padding: "4px 8px",
+          }}
+        >
+          {expanded ? "▾" : "▸"}
+        </button>
+      </Row>
+      {expanded && (
+        <div style={{ padding: "0 16px 4px" }}>
+          <CasePipelineStepper steps={steps} theme={theme} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+type IntakeWorkspaceTab = "documents" | "exceptions";
+
+function NextBestActionCard({
+  theme,
+  step,
+  title,
+  timestamp,
+  explanation,
+  onViewOlder,
+}: {
+  theme: FigmaTheme;
+  step: number;
+  title: string;
+  timestamp: string;
+  explanation: string;
+  onViewOlder?: () => void;
+}) {
+  return (
+    <div style={{ ...dxpCard(theme), padding: 16 }}>
+      <Stack gap={10}>
+        <Row gap={10} align="start">
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: "50%",
+              background: "#1860ec",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 13,
+              fontWeight: 700,
+              flexShrink: 0,
+            }}
+          >
+            {step}
+          </div>
+          <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+            <Text weight="semibold" size="small">
+              Next Best Action
+            </Text>
+            <Text size="small">{title}</Text>
+            <Text size="small" tone="quaternary">
+              {timestamp}
+            </Text>
+          </Stack>
+        </Row>
+        <div
+          style={{
+            padding: "8px 10px",
+            borderRadius: 6,
+            background: "#E8F0FE",
+            border: `1px solid #B8D4FC`,
+          }}
+        >
+          <Text size="small" style={{ color: "#0A5AF5" }}>
+            {explanation}
+          </Text>
+        </div>
+        {onViewOlder && (
+          <button
+            type="button"
+            onClick={onViewOlder}
+            style={{
+              background: "none",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              fontSize: 11,
+              color: theme.text.tertiary,
+              textAlign: "left",
+              fontFamily: "Inter, sans-serif",
+            }}
+          >
+            View older
+          </button>
+        )}
+      </Stack>
+    </div>
+  );
+}
+
+function CaseDetailsRightRail({
+  theme,
+  caseId,
+  progress,
+  runtimeLog,
+  onPrimaryAction,
+}: {
+  theme: FigmaTheme;
+  caseId: CaseId;
+  progress: CaseProgress;
+  runtimeLog: RuntimeLogEntry[];
+  onPrimaryAction: () => void;
+}) {
+  const isNorthern = caseId === "northern-retail";
+  const nbaTitle = isNorthern
+    ? "Request missing documents from borrower portal"
+    : "Evaluate Debt-to-Equity Restructuring & Liquidity Lifeline";
+  const nbaExplanation = isNorthern
+    ? "Gate 1 is blocked until all required documents are received per SOP §4.2."
+    : "Completing this evaluation will resolve the 'Structural Insolvency' flag.";
+  return (
+    <Stack gap={12} style={{ width: 300, flexShrink: 0 }}>
+      <NextBestActionCard
+        theme={theme}
+        step={isNorthern ? 1 : 3}
+        title={nbaTitle}
+        timestamp="03/17/2026 | 02:30 PM CST"
+        explanation={nbaExplanation}
+        onViewOlder={() => showActionToast("Prior recommendations archived (demo)")}
+      />
+      <div style={{ ...dxpCard(theme), padding: "0 16px" }}>
+        <CollapsibleSection title="AI Tasks" theme={theme}>
+          <Stack gap={6}>
+            <Text size="small" tone="tertiary">
+              Intake Agent: document classification complete
+            </Text>
+            <Text size="small" tone="tertiary">
+              Connector Agent: EIN bureau sync queued after Gate 1
+            </Text>
+          </Stack>
+        </CollapsibleSection>
+        <CollapsibleSection title="Notes" theme={theme}>
+          <Text size="small" tone="tertiary">
+            No analyst notes yet. Overrides and gate sign-offs are logged to the audit trail.
+          </Text>
+        </CollapsibleSection>
+        <CollapsibleSection title="Activity Log" theme={theme} defaultOpen>
+          <Stack gap={4}>
+            {runtimeLog.slice(-4).map((e, i) => (
+              <Text key={`${e.time}-${i}`} size="small" tone="tertiary">
+                {e.time} — {e.output}
+              </Text>
+            ))}
+          </Stack>
+        </CollapsibleSection>
+      </div>
+      <Button variant="primary" style={{ height: 32, fontSize: 12 }} onClick={onPrimaryAction}>
+        {progress.primaryCta}
+      </Button>
+    </Stack>
+  );
+}
+
+function CaseDetailsFooter({
+  theme,
+  entitySummary,
+}: {
+  theme: FigmaTheme;
+  entitySummary: string;
+}) {
+  const [footerTab, setFooterTab] = useCanvasState<"details" | "comments">("caseFooterTab", "details");
+  return (
+    <div style={{ ...dxpCard(theme), padding: 0, overflow: "hidden" }}>
+      <Row style={{ borderBottom: `1px solid ${theme.stroke.tertiary}`, padding: "0 16px" }}>
+        {(["details", "comments"] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setFooterTab(tab)}
+            style={{
+              background: "none",
+              border: "none",
+              borderBottom: footerTab === tab ? `2px solid ${theme.accent.primary}` : "2px solid transparent",
+              padding: "10px 12px",
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: footerTab === tab ? 600 : 400,
+              color: theme.text.primary,
+              fontFamily: "Inter, sans-serif",
+              textTransform: "capitalize",
+            }}
+          >
+            {tab}
+          </button>
+        ))}
+      </Row>
+      <div style={{ padding: "0 16px" }}>
+        <CollapsibleSection title="About Entity" theme={theme} defaultOpen>
+          {footerTab === "details" ? (
+            <Text size="small" tone="tertiary">
+              {entitySummary}
+            </Text>
+          ) : (
+            <Text size="small" tone="tertiary">
+              No comments yet. Committee notes appear here after Gate 4 review.
+            </Text>
+          )}
+        </CollapsibleSection>
+      </div>
+    </div>
+  );
+}
+
 function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
   const [caseId, setCaseId] = useCanvasState<CaseId>("activeCaseId", "walmart");
   const [stageId, setStageId] = useCanvasState<StageId>("caseStage", "review");
@@ -5738,6 +6067,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
     receivedCount,
     totalDocs: totalIntakeDocs,
     northernUnlocked: northernPipelineUnlocked,
+    forceIntakeGate: stageId === "intake",
   });
 
   const walmartAudit = auditAppend.filter((e) => e.caseId === "walmart");
@@ -5851,7 +6181,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
       }
       if (action.kind === "gate1-sign") {
         if (receivedCount < totalIntakeDocs) {
-          showActionToast("All 9 documents required before signing Gate 1");
+          showActionToast(`All ${totalIntakeDocs} documents required before signing Gate 1`);
           return;
         }
         const event = makeAuditEvent(caseId, action);
@@ -5898,20 +6228,49 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
     setMappingSearch("");
   };
 
-  const pipelineSteps: PipelineStep[] =
-    isNorthern && !northernPipelineUnlocked
-      ? [
-          { label: "Ingestion", status: "done" },
-          { label: "Extractions", status: "blocked", badge: totalIntakeDocs - receivedCount },
-          { label: "Output", status: "pending", badge: 3 },
-          { label: "Health", status: "pending", badge: 4 },
-        ]
-      : [
-          { label: "Ingestion", status: "done" },
-          { label: "Extractions", status: "done" },
-          { label: "Output", status: "active", badge: 2 },
-          { label: "Health", status: "pending", badge: 4 },
-        ];
+  const [intakeTab, setIntakeTab] = useCanvasState<IntakeWorkspaceTab>("intakeWorkspaceTab", "documents");
+
+  const handleMarkComplete = useCallback(() => {
+    if (receivedCount < totalIntakeDocs) {
+      showActionToast(`Upload remaining documents — ${formatDocCountLabel(receivedCount, totalIntakeDocs)}`);
+      return;
+    }
+    if (gate1Signed) {
+      showActionToast("Ingestion complete — advancing to extraction");
+      setStageId("extraction");
+      return;
+    }
+    appendAudit({ kind: "gate1-sign" });
+  }, [receivedCount, totalIntakeDocs, gate1Signed, setStageId, appendAudit]);
+
+  const missingDocs = totalIntakeDocs - receivedCount;
+  const intakeComplete = gate1Signed || (caseId === "walmart" && stageId !== "intake");
+  const pipelineSteps: PipelineStep[] = (() => {
+    if (!intakeComplete) {
+      return [
+        { label: "Ingestion", status: "active" },
+        { label: "Extractions", status: missingDocs > 0 ? "blocked" : "pending", badge: missingDocs > 0 ? missingDocs : undefined },
+        { label: "Output", status: "pending" },
+        { label: "Health", status: "pending" },
+      ];
+    }
+    if (!signedGateActions.has("gate2-sign")) {
+      return [
+        { label: "Ingestion", status: "done" },
+        { label: "Extractions", status: "done" },
+        { label: "Output", status: "active", badge: remainingExceptions > 0 ? remainingExceptions : undefined },
+        { label: "Health", status: "pending" },
+      ];
+    }
+    return [
+      { label: "Ingestion", status: "done" },
+      { label: "Extractions", status: "done" },
+      { label: "Output", status: "done" },
+      { label: "Health", status: signedGateActions.has("gate5-sign") ? "done" : "active" },
+    ];
+  })();
+
+  const showIntakeDetails = stageId === "intake";
 
   const showReviewWorkspace = stageId === "review" && (!isNorthern || northernPipelineUnlocked);
   const showAssessmentWorkspace = stageId === "assessment" && (!isNorthern || northernPipelineUnlocked);
@@ -5971,23 +6330,12 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
         <div style={{ padding: "10px 16px", borderBottom: `1px solid ${theme.stroke.tertiary}` }}>
           <Row align="center" justify="space-between" wrap gap={8}>
             <Row gap={8} align="center">
-              <span style={{ fontSize: 16 }}>⊞</span>
-              <Text weight="semibold">{caseDef.title}</Text>
+              <span style={{ fontSize: 16 }}>💼</span>
+              <Text weight="semibold">{caseDisplayTitle(caseId)}</Text>
               <Text size="small" tone="quaternary">···</Text>
             </Row>
             <Row gap={8} align="center">
               <CollaboratorAvatars theme={theme} initials={["SW", "MC", "J"]} />
-              <ExportDropdown theme={theme} caseRef={caseDef.caseRef} />
-              <ActionsMenu
-                theme={theme}
-                label="···"
-                menuKey="caseHeaderMenu"
-                items={[
-                  { label: "Duplicate case", onClick: () => showActionToast("Case duplicated (demo)") },
-                  { label: "Archive case", onClick: () => showActionToast("Archive request logged") },
-                  { label: "View audit trail", onClick: () => showActionToast("Scroll to runtime log below") },
-                ]}
-              />
               <Button
                 variant="ghost"
                 style={{ height: 28, fontSize: 11 }}
@@ -6003,8 +6351,15 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                   Saved {savedAt}
                 </Text>
               )}
-              <Button variant="primary" style={{ height: 28, fontSize: 11 }} onClick={() => setMemoOpen(true)}>
-                Generate Report
+              <Button
+                variant="primary"
+                style={{ height: 28, fontSize: 11 }}
+                onClick={() => {
+                  setMemoOpen(true);
+                  showActionToast("Generating credit memo draft (demo)");
+                }}
+              >
+                Generate
               </Button>
             </Row>
           </Row>
@@ -6013,13 +6368,9 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
         <div style={{ padding: "8px 16px", borderBottom: `1px solid ${theme.stroke.tertiary}` }}>
           <Row gap={24} wrap align="center">
             {[
-              { label: "Case ID", value: isNorthern ? "NRTL-REV-2025" : "WMT-TLB-2025" },
+              { label: "Case ID", value: caseDisplayCaseId(caseId) },
               { label: "Case / Trigger Type", value: isNorthern ? "Revolving Credit" : "New Loan" },
-              { label: "SLA", value: isNorthern ? "Blocked" : "2 hrs remaining" },
-              { label: "Status", value: isNorthern && !northernPipelineUnlocked ? "Blocked" : progress.statusLabel },
-              { label: "Extraction Confidence", value: isNorthern && !northernPipelineUnlocked ? `${receivedCount}/${totalIntakeDocs} docs` : "78%" },
-              { label: "Risk", value: isNorthern ? "High Risk" : "Low Risk" },
-              { label: "Normalization", value: isNorthern ? "Pending" : "Balanced" },
+              { label: "SLA", value: isNorthern && missingDocs > 0 ? "4 hrs remaining" : isNorthern ? "Blocked" : "2 hrs remaining" },
             ].map((item) => (
               <div key={item.label}>
                 <Stack gap={1}>
@@ -6028,13 +6379,43 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                 </Stack>
               </div>
             ))}
+            <div>
+              <Stack gap={1}>
+                <Text size="small" tone="quaternary">Status</Text>
+                <StatusDotBadge
+                  label={isNorthern && missingDocs > 0 ? "Blocked" : progress.statusLabel}
+                  tone={isNorthern && missingDocs > 0 ? "warning" : "info"}
+                />
+              </Stack>
+            </div>
+            <div>
+              <Stack gap={1}>
+                <Text size="small" tone="quaternary">Extraction Confidence</Text>
+                {isNorthern && missingDocs > 0 ? (
+                  <Pill tone="warning">{`${Math.round((receivedCount / totalIntakeDocs) * 100)}%`}</Pill>
+                ) : (
+                  <Pill tone="warning">78%</Pill>
+                )}
+              </Stack>
+            </div>
+            <div>
+              <Stack gap={1}>
+                <Text size="small" tone="quaternary">Risk</Text>
+                <StatusDotBadge label={isNorthern ? "High Risk" : "Low Risk"} tone={isNorthern ? "warning" : "success"} />
+              </Stack>
+            </div>
+            <div>
+              <Stack gap={1}>
+                <Text size="small" tone="quaternary">Normalization</Text>
+                <Pill tone="warning">{isNorthern ? "Pending" : "Pending Validation"}</Pill>
+              </Stack>
+            </div>
           </Row>
         </div>
         {/* Pipeline stepper */}
-        <div style={{ padding: "4px 16px" }}>
-          <CasePipelineStepper steps={pipelineSteps} theme={theme} />
-        </div>
-        {/* Trust strip + briefing */}
+        <CollapsiblePipelineStepper steps={pipelineSteps} theme={theme} />
+        {/* Trust strip + briefing — hidden on intake (moved to right rail) */}
+        {!showIntakeDetails && (
         <div style={{ padding: "8px 16px 12px" }}>
           <Stack gap={8}>
             <Row align="center" wrap gap={8}>
@@ -6078,6 +6459,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
             </Row>
           </Stack>
         </div>
+        )}
       </div>
 
       <Row gap={12} align="start" style={{ alignItems: "stretch" }}>
@@ -6086,113 +6468,193 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
         <Stack gap={12} style={{ flex: 1, minWidth: 0 }}>
           <StageTracePanel trace={activeTrace} theme={theme} onOpenSop={openSop} />
 
+          {showIntakeDetails ? (
+            <Row gap={12} align="start" style={{ alignItems: "stretch" }}>
+              <Stack gap={12} style={{ flex: 1, minWidth: 0 }}>
+                <div style={dxpCard(theme)}>
+                  <Stack gap={12}>
+                    <Row align="center" justify="space-between" wrap gap={8}>
+                      <span data-testid="intake-doc-count-header">
+                        <Text weight="semibold" size="small">
+                          {formatDocCountLabel(receivedCount, totalIntakeDocs)}
+                        </Text>
+                      </span>
+                      <Row gap={8} align="center">
+                        <ActionsMenu
+                          theme={theme}
+                          label="Actions ▾"
+                          menuKey="intakeActionsMenu"
+                          items={[
+                            { label: "Export document list", onClick: () => showActionToast("Document manifest exported (demo)") },
+                            { label: "View SOP §4.2 manifest", onClick: () => openSop("§4.2", "Required document manifest") },
+                            { label: "Request missing docs", onClick: () => appendAudit({ kind: "intake-doc-request" }) },
+                          ]}
+                        />
+                        <Button
+                          variant="primary"
+                          style={{ height: 28, fontSize: 11 }}
+                          data-testid="mark-complete-button"
+                          disabled={gate1Signed}
+                          onClick={handleMarkComplete}
+                        >
+                          Mark Complete
+                        </Button>
+                      </Row>
+                    </Row>
+                    <Row style={{ borderBottom: `1px solid ${theme.stroke.tertiary}` }}>
+                      {(["documents", "exceptions"] as const).map((tab) => {
+                        const count = tab === "documents" ? totalIntakeDocs : missingDocs;
+                        return (
+                          <button
+                            key={tab}
+                            type="button"
+                            onClick={() => setIntakeTab(tab)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              borderBottom: intakeTab === tab ? `2px solid ${theme.accent.primary}` : "2px solid transparent",
+                              padding: "8px 12px",
+                              cursor: "pointer",
+                              fontSize: 12,
+                              fontWeight: intakeTab === tab ? 600 : 400,
+                              color: theme.text.primary,
+                              fontFamily: "Inter, sans-serif",
+                            }}
+                          >
+                            {tab === "documents" ? `Documents (${count})` : `Exceptions (${count})`}
+                          </button>
+                        );
+                      })}
+                    </Row>
+                    <Row justify="end">
+                      <Button
+                        variant="ghost"
+                        style={{ height: 26, fontSize: 11 }}
+                        data-testid="intake-upload-button"
+                        onClick={() => markNextMissingDoc()}
+                      >
+                        ↑ Upload
+                      </Button>
+                    </Row>
+                    {isNorthern && !gate1Signed && missingDocs > 0 && (
+                      <Callout tone="warning" title={`Gate 1 blocked — ${missingDocs} documents missing`}>
+                        Intake Agent cannot release extraction. EIN captured from credit application — Connector
+                        Agent ran preliminary AML entity screen; full bureau + guarantor SSN KYC deferred.
+                      </Callout>
+                    )}
+                    {isNorthern && !gate1Signed && missingDocs === 0 && (
+                      <Callout tone="info" title="All documents received — Gate 1 sign-off required">
+                        Intake Agent validated all documents per SOP §4.2. Mark Complete to release extraction pipeline.
+                      </Callout>
+                    )}
+                    {gate1Signed && (
+                      <Callout tone="success" title="Gate 1 passed">
+                        Intake Agent validated document set per SOP §4.2. EIN captured → Connector Agent synced
+                        Experian, Equifax, D&B, and AML/KYC APIs in parallel.
+                      </Callout>
+                    )}
+                    {intakeTab === "documents" && (
+                      <Table
+                        headers={["Document", "Classification", "Size", "Status", "Uploaded On", "Uploaded By", ""]}
+                        rows={mergedIntakeDocs.map((doc) => [
+                          <Row gap={6} align="center">
+                            <span style={{ fontSize: 13, color: "#B42018" }}>📄</span>
+                            <Stack gap={2}>
+                              <Text size="small" weight="semibold">{doc.name}</Text>
+                              <SopLink section={doc.sopRef} appliedTo={doc.name} onOpen={openSop} />
+                            </Stack>
+                          </Row>,
+                          doc.classification ? (
+                            <Text size="small">{doc.classification}</Text>
+                          ) : (
+                            <Text size="small" tone="quaternary">—</Text>
+                          ),
+                          doc.sizeKb ? formatDocSize(doc.sizeKb) : "—",
+                          doc.received ? (
+                            <ExtractedBadge theme={theme} />
+                          ) : (
+                            <Pill tone="deleted">Missing</Pill>
+                          ),
+                          doc.uploadedOn ?? "—",
+                          doc.uploadedBy ?? "—",
+                          !doc.received ? (
+                            <Button
+                              variant="ghost"
+                              style={{ height: 24, fontSize: 10 }}
+                              data-testid={`mark-received-${doc.name.replace(/\s+/g, "-").toLowerCase()}`}
+                              onClick={() => markDocReceived(doc.name)}
+                            >
+                              Mark received (demo)
+                            </Button>
+                          ) : (
+                            <ActionsMenu
+                              theme={theme}
+                              label="···"
+                              menuKey={`doc-menu-${doc.name}`}
+                              items={[
+                                { label: "View document", onClick: () => showActionToast(`Opening ${doc.name} (demo)`) },
+                                { label: "Re-classify", onClick: () => showActionToast("Re-classification queued (demo)") },
+                              ]}
+                            />
+                          ),
+                        ])}
+                        rowTone={mergedIntakeDocs.map((d) => (d.received ? "success" : "danger"))}
+                        striped
+                      />
+                    )}
+                    {intakeTab === "exceptions" && (
+                      <Stack gap={8}>
+                        {missingDocs === 0 ? (
+                          <Text size="small" tone="tertiary">No intake exceptions — all documents received and classified.</Text>
+                        ) : (
+                          mergedIntakeDocs
+                            .filter((d) => !d.received)
+                            .map((doc) => (
+                              <Callout key={doc.name} tone="warning" title={`Missing: ${doc.name}`}>
+                                Required per {doc.sopRef}. Upload or request from borrower portal.
+                              </Callout>
+                            ))
+                        )}
+                      </Stack>
+                    )}
+                    {isNorthern && !gate1Signed && missingDocs === 0 && (
+                      <GateSignOffBar
+                        mode="gate1-sign"
+                        theme={theme}
+                        disabled={gate1Signed}
+                        onAction={(action) => appendAudit(action)}
+                      />
+                    )}
+                    {isNorthern && !gate1Signed && missingDocs > 0 && (
+                      <GateSignOffBar
+                        mode="intake-override"
+                        theme={theme}
+                        onAction={(action) => appendAudit(action)}
+                      />
+                    )}
+                  </Stack>
+                </div>
+                <CaseDetailsFooter theme={theme} entitySummary={caseDef.entitySummary} />
+              </Stack>
+              <CaseDetailsRightRail
+                theme={theme}
+                caseId={caseId}
+                progress={progress}
+                runtimeLog={mergedLog}
+                onPrimaryAction={() => {
+                  if (progress.primaryStage === "intake") handleMarkComplete();
+                  else {
+                    setStageId(progress.primaryStage);
+                    if (progress.primaryStage === "review" && remainingExceptions > 0) setDetailTab("exceptions");
+                  }
+                }}
+              />
+            </Row>
+          ) : (
+            <>
           <Text weight="semibold" size="small">
             Stage workspace
           </Text>
-          {stageId === "intake" && (
-            <div style={dxpCard(theme)}>
-              <Stack gap={12}>
-                <Row align="center" justify="space-between">
-                  <Text weight="semibold" size="small">
-                    Documents Uploaded ({receivedCount}/{totalIntakeDocs})
-                  </Text>
-                  <Row gap={8} align="center">
-                    <AgentTag agentId="intake" theme={theme} />
-                    <Button
-                      variant="ghost"
-                      style={{ height: 26, fontSize: 11 }}
-                      data-testid="intake-upload-button"
-                      onClick={() => markNextMissingDoc()}
-                    >
-                      ↑ Upload
-                    </Button>
-                  </Row>
-                </Row>
-                {!isNorthern && (
-                  <Row gap={8} align="center">
-                    <Button
-                      variant="ghost"
-                      style={{ height: 26, fontSize: 11 }}
-                      data-testid="view-sop-manifest"
-                      onClick={() => openSop("§4.2", "Required document manifest")}
-                    >
-                      View SOP §4.2 manifest
-                    </Button>
-                  </Row>
-                )}
-                {isNorthern && !gate1Signed && receivedCount < totalIntakeDocs && (
-                  <Callout tone="warning" title={`Gate 1 blocked — ${totalIntakeDocs - receivedCount} documents missing`}>
-                    Intake Agent cannot release extraction. EIN captured from credit application — Connector
-                    Agent ran preliminary AML entity screen; full bureau + guarantor SSN KYC deferred.
-                  </Callout>
-                )}
-                {isNorthern && !gate1Signed && receivedCount === totalIntakeDocs && (
-                  <Callout tone="info" title="All documents received — Gate 1 sign-off required">
-                    Intake Agent validated 9/9 documents per SOP §4.2. Sign Gate 1 to release extraction pipeline.
-                  </Callout>
-                )}
-                {(gate1Signed || (!isNorthern && receivedCount === totalIntakeDocs)) && (
-                  <Callout tone="success" title="Gate 1 passed">
-                    Intake Agent validated 9/9 documents per SOP §4.2. EIN captured → Connector Agent synced
-                    Experian, Equifax, D&B, and AML/KYC APIs in parallel.
-                  </Callout>
-                )}
-                <Table
-                  headers={["Document", "Classification", "SOP ref", "Status", "Uploaded By", "Uploaded On", "Size", ""]}
-                  rows={mergedIntakeDocs.map((doc) => [
-                    <Row gap={6} align="center">
-                      <span style={{ fontSize: 13 }}>📄</span>
-                      <Text size="small" weight="semibold">{doc.name}</Text>
-                    </Row>,
-                    doc.classification ? (
-                      <Pill tone="info">{doc.classification}</Pill>
-                    ) : (
-                      <Text size="small" tone="quaternary">—</Text>
-                    ),
-                    <SopLink section={doc.sopRef} appliedTo={doc.name} onOpen={openSop} />,
-                    doc.received ? (
-                      <ExtractedBadge theme={theme} />
-                    ) : (
-                      <Pill tone="deleted">Missing</Pill>
-                    ),
-                    doc.uploadedBy ?? "—",
-                    doc.uploadedOn ?? "—",
-                    doc.sizeKb ? `${(doc.sizeKb / 1024).toFixed(1)} MB` : "—",
-                    !doc.received ? (
-                      <Button
-                        variant="ghost"
-                        style={{ height: 24, fontSize: 10 }}
-                        data-testid={`mark-received-${doc.name.replace(/\s+/g, "-").toLowerCase()}`}
-                        onClick={() => markDocReceived(doc.name)}
-                      >
-                        Mark received (demo)
-                      </Button>
-                    ) : (
-                      <Text size="small" tone="quaternary">—</Text>
-                    ),
-                  ])}
-                  rowTone={mergedIntakeDocs.map((d) => (d.received ? "success" : "danger"))}
-                  striped
-                />
-                {isNorthern && !gate1Signed && receivedCount === totalIntakeDocs && (
-                  <GateSignOffBar
-                    mode="gate1-sign"
-                    theme={theme}
-                    disabled={gate1Signed}
-                    onAction={(action) => appendAudit(action)}
-                  />
-                )}
-                {isNorthern && !gate1Signed && receivedCount < totalIntakeDocs && (
-                  <GateSignOffBar
-                    mode="intake-override"
-                    theme={theme}
-                    onAction={(action) => appendAudit(action)}
-                  />
-                )}
-              </Stack>
-            </div>
-          )}
-
           {showReviewWorkspace && (
             <>
               <div
@@ -6425,7 +6887,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
             </>
           )}
 
-          {isNorthern && !northernPipelineUnlocked && stageId !== "intake" && stageId !== "memo" && (
+          {isNorthern && !northernPipelineUnlocked && stageId !== "memo" && (
             <div style={dxpCard(theme)}>
               <Callout tone="warning" title="Pipeline held by Orchestrator">
                 This stage has not started. Gate 1 is blocked on incomplete documents — see Intake stage trace for
@@ -6527,6 +6989,8 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
               theme={theme}
               onGoToReview={() => setStageId("review")}
             />
+          )}
+            </>
           )}
         </Stack>
       </Row>
@@ -7488,7 +7952,10 @@ export default function FinancialSpreadingACOS() {
     }
   };
 
-  const caseContext = view === "case" ? `${CASES[caseId].title} · ${CASES[caseId].caseRef}` : undefined;
+  const caseContext =
+    view === "case"
+      ? `Case Details: ${caseId === "walmart" ? "Walmart Inc." : "Northern Retail LLC"}`
+      : undefined;
 
   return (
     <Stack gap={8}>

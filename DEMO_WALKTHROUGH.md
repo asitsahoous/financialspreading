@@ -36,7 +36,8 @@ Goal: show agents did the work, one exception needs you, you sign a gate, pipeli
 | Step | Click this | You should see |
 |------|------------|----------------|
 | 1 | Stay on **Command Center** | Blue banner: "Since your last login…" Three columns of queue cards |
-| 2 | **Walmart Inc.** card → **Review mapping** | Cases tab opens. Header: "Walmart Inc. Spread". Pipeline stepper shows Output active |
+| 2 | **Walmart Inc.** card → **Review mapping** | Case workspace opens at **Review** stage. Case switcher shows **Walmart Inc. Spread**. Pipeline stepper shows Output active |
+| 2b | **Cases** tab → Walmart row → **Negotiate** | Case Details intake view: **04/04 Documents Uploaded**, Ingestion step active, right-rail **Next Best Action** |
 | 3 | Point to the **agent briefing** and **Case Trust Strip** | Trust score, Gate 2 pending, ~2.5 days saved |
 | 4 | Left rail → **Review** (if not already there) | Split view: source PDF left, extracted fields right |
 | 5 | Tab **Exceptions (1)** | One row: **Total Assets** at low confidence |
@@ -59,7 +60,7 @@ Do the 5-minute Walmart path first, then add the exception story.
 |------|------------|----------------|
 | 1 | **Command Center** tab | Northern Retail in the **Critical** column |
 | 2 | **Resolve completeness** | Northern Retail case opens at **Intake** stage |
-| 3 | Document table | 2 received, **7 Missing** (red pills) |
+| 3 | Document table | 2 received, **7 Missing** (red pills). Header shows **02/09 Documents Uploaded** |
 | 4 | **↑ Upload** *(or **Mark received (demo)** on each missing row)* | Each click marks the next missing doc. Toast shows progress (e.g. "3/9 documents") |
 | 5 | After all **9/9** received | Blue callout: "All documents received — Gate 1 sign-off required" |
 | 6 | **Sign Gate 1 — Approve document set** | Toast: "Gate 1 signed — pipeline unlocked". Stage advances |
