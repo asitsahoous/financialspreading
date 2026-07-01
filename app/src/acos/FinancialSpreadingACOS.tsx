@@ -1659,7 +1659,9 @@ const NORTHERN_RETAIL_MEMO_SECTIONS: MemoSection[] = [
   },
 ];
 
-type AuditEvent = RuntimeLogEntry & { id: string; caseId: CaseId };
+type GateSignKind = "gate2-sign" | "gate3-sign" | "gate4-sign" | "gate5-sign";
+
+type AuditEvent = RuntimeLogEntry & { id: string; caseId: CaseId; gateAction?: GateSignKind };
 
 type CaseDefinition = {
   id: CaseId;
@@ -2218,6 +2220,10 @@ type GateAction =
   | { kind: "mapping-override"; field: string; correctedValue?: string; note?: string }
   | { kind: "intake-override" };
 
+function isGateSignKind(kind: GateAction["kind"]): kind is GateSignKind {
+  return kind === "gate2-sign" || kind === "gate3-sign" || kind === "gate4-sign" || kind === "gate5-sign";
+}
+
 function GateSignOffBar({
   mode,
   theme: _theme,
@@ -2450,6 +2456,7 @@ function makeAuditEvent(caseId: CaseId, action: GateAction): AuditEvent {
     return {
       id: `audit-${Date.now()}-gate2`,
       caseId,
+      gateAction: "gate2-sign",
       time: now,
       stage: "Review",
       actorKind: "human",
@@ -2463,6 +2470,7 @@ function makeAuditEvent(caseId: CaseId, action: GateAction): AuditEvent {
     return {
       id: `audit-${Date.now()}-gate3`,
       caseId,
+      gateAction: "gate3-sign",
       time: now,
       stage: "Assessment",
       actorKind: "human",
@@ -2476,6 +2484,7 @@ function makeAuditEvent(caseId: CaseId, action: GateAction): AuditEvent {
     return {
       id: `audit-${Date.now()}-gate4`,
       caseId,
+      gateAction: "gate4-sign",
       time: now,
       stage: "Credit Memo",
       actorKind: "human",
@@ -2489,6 +2498,7 @@ function makeAuditEvent(caseId: CaseId, action: GateAction): AuditEvent {
     return {
       id: `audit-${Date.now()}-gate5`,
       caseId,
+      gateAction: "gate5-sign",
       time: now,
       stage: "Credit Decision",
       actorKind: "human",
@@ -2860,14 +2870,17 @@ type PipelineStep = {
 function ExportDropdown({ theme, caseRef }: { theme: FigmaTheme; caseRef: string }) {
   const [open, setOpen] = useCanvasState<boolean>("exportDropdownOpen", false);
   const [lastExport, setLastExport] = useCanvasState<string>("lastExportFormat", "");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(false), [setOpen]);
+  useDismissOnOutside(open, close, rootRef);
 
   const handleExport = (format: "PDF" | "Excel") => {
-    const ext = format === "PDF" ? "pdf" : "csv";
-    const mime = format === "PDF" ? "application/pdf" : "text/csv;charset=utf-8";
-    const body =
-      format === "PDF"
-        ? `Financial Spreading Export — ${caseRef}\nGenerated: ${new Date().toISOString()}\n`
-        : `Case,Stage,Confidence\n${caseRef},Review,99%\n`;
+    const isPdfDemo = format === "PDF";
+    const ext = isPdfDemo ? "txt" : "csv";
+    const mime = "text/plain;charset=utf-8";
+    const body = isPdfDemo
+      ? `[Demo PDF export — plain text placeholder]\nFinancial Spreading Export — ${caseRef}\nGenerated: ${new Date().toISOString()}\n`
+      : `Case,Stage,Confidence\n${caseRef},Review,99%\n`;
     downloadExportFile(`${caseRef}.${ext}`, body, mime);
     setLastExport(`${format} · ${caseRef} · ${new Date().toLocaleTimeString()}`);
     setOpen(false);
@@ -2875,7 +2888,7 @@ function ExportDropdown({ theme, caseRef }: { theme: FigmaTheme; caseRef: string
   };
 
   return (
-    <div style={{ position: "relative" }}>
+    <div ref={rootRef} style={{ position: "relative" }}>
       <Button variant="secondary" style={{ height: 28, fontSize: 11 }} onClick={() => setOpen(!open)}>
         Export ▾
       </Button>
@@ -2912,7 +2925,7 @@ function ExportDropdown({ theme, caseRef }: { theme: FigmaTheme; caseRef: string
                 color: theme.text.primary,
               }}
             >
-              Export as {fmt}
+              Export as {fmt}{fmt === "PDF" ? " (demo)" : ""}
             </button>
           ))}
         </div>
@@ -3301,10 +3314,12 @@ function CreditMemoFullView({
   theme,
   onClose,
   onSubmit,
+  gate4Signed = false,
 }: {
   theme: FigmaTheme;
   onClose: () => void;
   onSubmit?: () => void;
+  gate4Signed?: boolean;
 }) {
   const [expandedSections, setExpandedSections] = useCanvasState<string[]>("memoExpanded", ["rating"]);
   const [explainOpen, setExplainOpen] = useCanvasState<boolean>("memoExplainOpen", false);
@@ -3733,13 +3748,15 @@ function CreditMemoFullView({
             <Button
               variant="primary"
               style={{ height: 32, fontSize: 12, width: "100%" }}
+              disabled={gate4Signed}
               onClick={() => {
+                if (gate4Signed) return;
                 onSubmit?.();
                 showActionToast("Credit memo submitted — Gate 4 sign-off recorded");
                 onClose();
               }}
             >
-              Submit & sign Gate 4
+              {gate4Signed ? "Gate 4 already signed" : "Submit & sign Gate 4"}
             </Button>
           </Stack>
         </div>
@@ -3868,7 +3885,7 @@ function PortfolioView({
               <Text size="small" tone="tertiary">DSCR 0.95x · Floor plan utilization 88%</Text>
             </Row>
             <Button variant="ghost" onClick={() => openCase("walmart", "assessment")}>
-              View case → AutoWest (assessment workspace)
+              View case → Walmart assessment (AutoWest demo)
             </Button>
           </Stack>
         </div>
@@ -3958,7 +3975,7 @@ function CommandCenterView({
               Covenant breach: Current Ratio 0.85x (req &gt;1.2x). DSCR 0.95x.
             </Text>
             <Button variant="primary" onClick={() => openCase("walmart", "assessment")}>
-              Open case workspace
+              Open Walmart assessment (AutoWest demo)
             </Button>
           </DxpQueueCard>
         </Stack>
