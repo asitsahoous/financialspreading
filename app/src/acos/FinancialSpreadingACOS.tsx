@@ -4707,8 +4707,26 @@ function CommandCenterView({
   onOpenTrustLayer?: () => void;
   onOpenCreditPolicy?: () => void;
 }) {
+  const [hintDismissed, setHintDismissed] = useCanvasState<boolean>("demoWalkthroughHintDismissed", false);
   return (
     <Stack gap={16}>
+      {!hintDismissed && (
+        <Callout tone="warning" title="First walkthrough?">
+          <Row align="center" justify="space-between" wrap gap={8}>
+            <Text size="small">
+              Click <strong>Reset demo</strong> (top-right tab bar) before your first demo so gates and buttons start fresh.
+            </Text>
+            <Button
+              variant="ghost"
+              style={{ height: 26, fontSize: 11 }}
+              data-testid="dismiss-walkthrough-hint"
+              onClick={() => setHintDismissed(true)}
+            >
+              Dismiss
+            </Button>
+          </Row>
+        </Callout>
+      )}
       <Callout tone="info" title="Since your last login">
         Agents processed 15 cases overnight · 3 need your review · Est. 28 min total
       </Callout>
