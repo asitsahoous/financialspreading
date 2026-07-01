@@ -203,7 +203,7 @@ export function Button({
     borderRadius: 4,
     fontSize: 13,
     fontWeight: 500,
-    cursor: rest.disabled ? "not-allowed" : "pointer",
+    cursor: rest.disabled ? "not-allowed" : rest.onClick ? "pointer" : "default",
     fontFamily: "Inter, sans-serif",
     opacity: rest.disabled ? 0.5 : 1,
   };

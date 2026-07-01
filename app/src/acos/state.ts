@@ -3,7 +3,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const store = new Map<string, unknown>();
 const subscribers = new Map<string, Set<(value: unknown) => void>>();
 
+const TOAST_KEY = "actionToast";
+let toastClearTimer: ReturnType<typeof setTimeout> | null = null;
+let toastGeneration = 0;
+
+// Ephemeral toasts must not survive reload — clear any legacy persisted value.
+try {
+  sessionStorage.removeItem(`acos:${TOAST_KEY}`);
+} catch {
+  /* ignore */
+}
+
 function readStored<T>(key: string, initial: T): T {
+  if (key === TOAST_KEY) {
+    return (store.has(key) ? store.get(key) : initial) as T;
+  }
   if (store.has(key)) return store.get(key) as T;
   try {
     const raw = sessionStorage.getItem(`acos:${key}`);
@@ -23,6 +37,11 @@ function notify(key: string, value: unknown) {
   const subs = subscribers.get(key);
   if (!subs) return;
   for (const listener of subs) listener(value);
+}
+
+function clearActionToast() {
+  store.set(TOAST_KEY, "");
+  notify(TOAST_KEY, "");
 }
 
 /**
@@ -59,10 +78,12 @@ export function useCanvasState<T>(key: string, initial: T): [T, (v: T | ((prev: 
       const prev = store.has(key) ? (store.get(key) as T) : initialRef.current;
       const resolved = typeof next === "function" ? (next as (p: T) => T)(prev) : next;
       store.set(key, resolved);
-      try {
-        sessionStorage.setItem(`acos:${key}`, JSON.stringify(resolved));
-      } catch {
-        /* ignore */
+      if (key !== TOAST_KEY) {
+        try {
+          sessionStorage.setItem(`acos:${key}`, JSON.stringify(resolved));
+        } catch {
+          /* ignore */
+        }
       }
       notify(key, resolved);
     },
@@ -70,4 +91,17 @@ export function useCanvasState<T>(key: string, initial: T): [T, (v: T | ((prev: 
   );
 
   return [value, set];
+}
+
+/** Ephemeral toast — auto-clears after 2.8s; not persisted to sessionStorage. */
+export function showActionToast(message: string) {
+  const gen = ++toastGeneration;
+  store.set(TOAST_KEY, message);
+  notify(TOAST_KEY, message);
+  if (toastClearTimer) clearTimeout(toastClearTimer);
+  toastClearTimer = window.setTimeout(() => {
+    if (gen !== toastGeneration) return;
+    clearActionToast();
+    toastClearTimer = null;
+  }, 2800);
 }

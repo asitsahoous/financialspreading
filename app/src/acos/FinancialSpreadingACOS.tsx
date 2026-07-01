@@ -18,7 +18,8 @@ import {
   useCanvasState,
   useHostTheme,
 } from "./ui";
-import type { CSSProperties, ReactNode } from "react";
+import { useCallback, useEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { showActionToast } from "./state";
 
 /** Minimal shape used for click-outside checks — avoids importing React.MouseEvent, which
  *  is not exported the same way across the app's Vite/@types-react setup and the Canvas
@@ -51,6 +52,123 @@ type ChangeTarget = { target: { value: string } };
 
 type FigmaTheme = ReturnType<typeof useHostTheme>;
 
+function downloadExportFile(filename: string, body: string, mime = "text/plain;charset=utf-8") {
+  const blob = new Blob([body], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function ActionToastBanner({ theme }: { theme: FigmaTheme }) {
+  const [toast] = useCanvasState<string>("actionToast", "");
+  if (!toast) return null;
+  return (
+    <div
+      style={{
+        position: "fixed",
+        bottom: 24,
+        right: 24,
+        zIndex: 300,
+        background: theme.bg.editor,
+        border: `1px solid ${theme.stroke.secondary}`,
+        borderRadius: 8,
+        padding: "10px 14px",
+        boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+        fontSize: 12,
+        maxWidth: 360,
+      }}
+    >
+      {toast}
+    </div>
+  );
+}
+
+function useDismissOnOutside(open: boolean, onClose: () => void, rootRef: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, onClose, rootRef]);
+}
+
+function ActionsMenu({
+  theme,
+  label,
+  menuKey,
+  items,
+}: {
+  theme: FigmaTheme;
+  label: string;
+  menuKey: string;
+  items: { label: string; onClick: () => void }[];
+}) {
+  const [open, setOpen] = useCanvasState<boolean>(menuKey, false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(false), [setOpen]);
+  useDismissOnOutside(open, close, rootRef);
+  return (
+    <div ref={rootRef} style={{ position: "relative" }}>
+      <Button variant="ghost" style={{ height: 28, fontSize: 11 }} onClick={() => setOpen(!open)}>
+        {label}
+      </Button>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: 32,
+            right: 0,
+            background: theme.bg.editor,
+            border: `1px solid ${theme.stroke.secondary}`,
+            borderRadius: 8,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+            zIndex: 60,
+            minWidth: 180,
+            overflow: "hidden",
+          }}
+        >
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              onClick={() => {
+                item.onClick();
+                setOpen(false);
+              }}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                padding: "8px 12px",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontSize: 12,
+                fontFamily: "Inter, sans-serif",
+                color: theme.text.primary,
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function dxpCard(theme: FigmaTheme): CSSProperties {
   return {
     background: theme.bg.editor,
@@ -60,7 +178,26 @@ function dxpCard(theme: FigmaTheme): CSSProperties {
   };
 }
 
-function DxpLeftNav({ theme }: { theme: FigmaTheme }) {
+function navHighlightView(view: View): View {
+  return view === "case" ? "caselist" : view;
+}
+
+function DxpLeftNav({
+  theme,
+  activeView,
+  onNav,
+}: {
+  theme: FigmaTheme;
+  activeView: View;
+  onNav: (view: View) => void;
+}) {
+  const highlighted = navHighlightView(activeView);
+  const navItems: { label: string; title: string; view: View }[] = [
+    { label: "⌂", title: "Home — Command Center", view: "command" },
+    { label: "⌕", title: "Search — Cases", view: "caselist" },
+    { label: "☰", title: "Hub — InSight", view: "portfolio" },
+    { label: "☷", title: "Apps — Agent Catalog", view: "agents" },
+  ];
   return (
     <div
       style={{
@@ -86,32 +223,36 @@ function DxpLeftNav({ theme }: { theme: FigmaTheme }) {
           }}
         />
         <Stack gap={10} style={{ width: "100%", alignItems: "center" }}>
-          {[
-            { label: "⌂", title: "Home" },
-            { label: "⌕", title: "Search" },
-            { label: "☰", title: "Hub" },
-            { label: "☷", title: "Apps" },
-          ].map((item, i) => (
-            <div
-              key={item.label}
-              title={item.title}
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 8,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 14,
-                color: theme.text.tertiary,
-                background: i === 2 ? theme.fill.secondary : "transparent",
-                borderLeft: i === 2 ? `2px solid ${theme.accent.primary}` : "none",
-                cursor: "pointer",
-              }}
-            >
-              {item.label}
-            </div>
-          ))}
+          {navItems.map((item) => {
+            const isActive = item.view === highlighted;
+            return (
+              <button
+                key={item.label}
+                type="button"
+                title={item.title}
+                aria-label={item.title}
+                aria-current={isActive ? "page" : undefined}
+                onClick={() => onNav(item.view)}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 14,
+                  color: theme.text.tertiary,
+                  background: isActive ? theme.fill.secondary : "transparent",
+                  border: "none",
+                  borderLeft: isActive ? `2px solid ${theme.accent.primary}` : "none",
+                  cursor: "pointer",
+                  padding: 0,
+                }}
+              >
+                {item.label}
+              </button>
+            );
+          })}
         </Stack>
       </Stack>
       <div
@@ -563,7 +704,7 @@ function DxpShell({
   ];
   return (
     <Row align="stretch" style={{ minHeight: 640, fontFamily: "Inter, sans-serif" }}>
-      <DxpLeftNav theme={theme} />
+      <DxpLeftNav theme={theme} activeView={view} onNav={setView} />
       <Stack
         gap={0}
         style={{
@@ -2072,6 +2213,7 @@ type GateAction =
   | { kind: "gate2-sign" }
   | { kind: "gate3-sign" }
   | { kind: "gate4-sign" }
+  | { kind: "gate5-sign" }
   | { kind: "mapping-accept"; field: string }
   | { kind: "mapping-override"; field: string; correctedValue?: string; note?: string }
   | { kind: "intake-override" };
@@ -2129,6 +2271,18 @@ function GateSignOffBar({
             <Button variant="primary" onClick={() => onAction({ kind: "intake-override" })}>Send doc request reminder</Button>
         <Button variant="ghost" onClick={() => onAction({ kind: "intake-override" })}>
           Override with reason (logged)
+        </Button>
+      </Row>
+    );
+  }
+  if (mode === "gate5-sign") {
+    return (
+      <Row gap={8} wrap>
+        <Button variant="primary" disabled={disabled} onClick={() => onAction({ kind: "gate5-sign" })}>
+          Sign Gate 5 — Approve committee decision
+        </Button>
+        <Button variant="ghost" disabled={disabled} onClick={() => onAction({ kind: "mapping-override", field: "committee-decision" })}>
+          Request revisions (logged)
         </Button>
       </Row>
     );
@@ -2331,6 +2485,19 @@ function makeAuditEvent(caseId: CaseId, action: GateAction): AuditEvent {
       output: "Gate 4 passed — Decision Synthesis Agent released for committee package",
     };
   }
+  if (action.kind === "gate5-sign") {
+    return {
+      id: `audit-${Date.now()}-gate5`,
+      caseId,
+      time: now,
+      stage: "Credit Decision",
+      actorKind: "human",
+      actor: "Credit Committee",
+      input: "Committee package — Decision score 5.45/10 · Conditional Approve (Negotiate)",
+      reasoning: "Committee reviewed spread quality, connector bundle, and covenant headroom — approved negotiated structure",
+      output: "Gate 5 passed — case closed with Conditional Approve; facility terms documented in memo",
+    };
+  }
   if (action.kind === "mapping-accept") {
     return {
       id: `audit-${Date.now()}-accept`,
@@ -2378,6 +2545,8 @@ function makeAuditEvent(caseId: CaseId, action: GateAction): AuditEvent {
 
 function InSightAssistPanel({ theme, scope = "portfolio" }: { theme: FigmaTheme; scope?: "portfolio" | "cases" }) {
   const [open, setOpen] = useCanvasState<boolean>("insightAssistOpen", true);
+  const [chatInput, setChatInput] = useCanvasState<string>("insightAssistChat", "");
+  const [chatReply, setChatReply] = useCanvasState<string>("insightAssistReply", "");
   const casesSummary =
     "As of 09 Apr 2026: 8 active cases in queue. 3 flagged High Risk (AutoWest, Tesla Rental, Vantage). " +
     "Extraction complete on 6/8; 2 awaiting document intake. Orchestrator recommends prioritizing covenant breaches.";
@@ -2467,6 +2636,16 @@ function InSightAssistPanel({ theme, scope = "portfolio" }: { theme: FigmaTheme;
         <Row align="center" style={{ padding: "8px 0" }}>
           <input
             type="text"
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && chatInput.trim()) {
+                const agent = scope === "cases" ? "Case Orchestrator" : "Portfolio Sentinel";
+                setChatReply(`${agent}: Prioritize AutoWest Motors (DSCR breach) and Vantage Rental ($120M variance) — both need analyst review today.`);
+                setChatInput("");
+                showActionToast("InSight Assist responded");
+              }
+            }}
             placeholder="Type your message here"
             style={{
               flex: 1,
@@ -2481,6 +2660,13 @@ function InSightAssistPanel({ theme, scope = "portfolio" }: { theme: FigmaTheme;
           />
           <button
             type="button"
+            onClick={() => {
+              if (!chatInput.trim()) return;
+              const agent = scope === "cases" ? "Case Orchestrator" : "Portfolio Sentinel";
+              setChatReply(`${agent}: Prioritize AutoWest Motors (DSCR breach) and Vantage Rental ($120M variance) — both need analyst review today.`);
+              setChatInput("");
+              showActionToast("InSight Assist responded");
+            }}
             style={{
               width: 28,
               height: 28,
@@ -2500,8 +2686,19 @@ function InSightAssistPanel({ theme, scope = "portfolio" }: { theme: FigmaTheme;
             ↑
           </button>
         </Row>
+        {chatReply && (
+          <Text size="small" tone="secondary" style={{ padding: "8px 10px", background: theme.bg.elevated, borderRadius: 6 }}>
+            {chatReply}
+          </Text>
+        )}
         <Row gap={8} align="center" justify="space-between">
-          <Text size="small" tone="quaternary">+ Attachment</Text>
+          <button
+            type="button"
+            onClick={() => showActionToast("Attachment picker opened (demo)")}
+            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: theme.text.quaternary, fontFamily: "Inter, sans-serif" }}
+          >
+            + Attachment
+          </button>
           <Row gap={4} align="center">
             <span style={{ fontSize: 11, color: theme.text.quaternary }}>
               Agent: {scope === "cases" ? "Case Orchestrator" : "Portfolio Sentinel"}
@@ -2665,8 +2862,16 @@ function ExportDropdown({ theme, caseRef }: { theme: FigmaTheme; caseRef: string
   const [lastExport, setLastExport] = useCanvasState<string>("lastExportFormat", "");
 
   const handleExport = (format: "PDF" | "Excel") => {
+    const ext = format === "PDF" ? "pdf" : "csv";
+    const mime = format === "PDF" ? "application/pdf" : "text/csv;charset=utf-8";
+    const body =
+      format === "PDF"
+        ? `Financial Spreading Export — ${caseRef}\nGenerated: ${new Date().toISOString()}\n`
+        : `Case,Stage,Confidence\n${caseRef},Review,99%\n`;
+    downloadExportFile(`${caseRef}.${ext}`, body, mime);
     setLastExport(`${format} · ${caseRef} · ${new Date().toLocaleTimeString()}`);
     setOpen(false);
+    showActionToast(`Downloaded ${format} export for ${caseRef}`);
   };
 
   return (
@@ -2937,8 +3142,19 @@ function ValidateRatiosPanel({ theme, onMarkComplete }: { theme: FigmaTheme; onM
       <Row align="center" justify="space-between" style={{ padding: "12px 16px", borderBottom: `1px solid ${theme.stroke.tertiary}` }}>
         <Text weight="semibold" size="small">Validate Ratios</Text>
         <Row gap={8} align="center">
-          <Button variant="ghost" style={{ height: 28, fontSize: 11 }}>Actions</Button>
-          <Button variant="primary" style={{ height: 28, fontSize: 11 }} onClick={onMarkComplete}>Mark Complete</Button>
+          <ActionsMenu
+            theme={theme}
+            label="Actions"
+            menuKey="ratioActionsMenu"
+            items={[
+              { label: "Recalculate ratios", onClick: () => { setCalculating(true); window.setTimeout(() => setCalculating(false), 550); showActionToast("Risk Agent recalculated ratios"); } },
+              { label: "Export ratio pack", onClick: () => { downloadExportFile("ratios-summary.csv", "Ratio,FY2025,FY2026\nCurrent Ratio,0.82,0.79\n"); showActionToast("Ratio pack downloaded"); } },
+              { label: "Escalate to risk officer", onClick: () => showActionToast("Escalation sent to Risk Officer queue") },
+            ]}
+          />
+          <Button variant="primary" style={{ height: 28, fontSize: 11 }} onClick={onMarkComplete} disabled={!onMarkComplete}>
+            Mark Complete
+          </Button>
         </Row>
       </Row>
       <Row gap={0} style={{ borderBottom: `1px solid ${theme.stroke.secondary}`, padding: "0 16px" }}>
@@ -3081,8 +3297,19 @@ function ValidateRatiosPanel({ theme, onMarkComplete }: { theme: FigmaTheme; onM
 
 // ─── Credit Memo Full View (Review & Submit) ──────────────────────────────────
 
-function CreditMemoFullView({ theme, onClose }: { theme: FigmaTheme; onClose: () => void }) {
+function CreditMemoFullView({
+  theme,
+  onClose,
+  onSubmit,
+}: {
+  theme: FigmaTheme;
+  onClose: () => void;
+  onSubmit?: () => void;
+}) {
   const [expandedSections, setExpandedSections] = useCanvasState<string[]>("memoExpanded", ["rating"]);
+  const [explainOpen, setExplainOpen] = useCanvasState<boolean>("memoExplainOpen", false);
+  const [commentSection, setCommentSection] = useCanvasState<string | null>("memoCommentSection", null);
+  const [commentDraft, setCommentDraft] = useCanvasState<string>("memoCommentDraft", "");
 
   const toggle = (id: string) => {
     setExpandedSections(
@@ -3141,8 +3368,19 @@ function CreditMemoFullView({ theme, onClose }: { theme: FigmaTheme; onClose: ()
                 <Text size="small">Verified</Text>
               </Row>
             </Stack>
-            <Button variant="ghost" style={{ marginLeft: "auto", height: 26, fontSize: 11 }}>Explain</Button>
+            <Button
+              variant="ghost"
+              style={{ marginLeft: "auto", height: 26, fontSize: 11 }}
+              onClick={() => setExplainOpen(!explainOpen)}
+            >
+              Explain
+            </Button>
           </Row>
+          {explainOpen && (
+            <Callout tone="info" title="Decision Agent rationale">
+              Risk score 5.45/10 reflects high leverage and weak liquidity offset by strong operating cash flow and low fleet LTV (25.6%). Recommend Negotiate — reduced revolver plus asset-backed line.
+            </Callout>
+          )}
         </Stack>
       ),
     },
@@ -3257,7 +3495,16 @@ function CreditMemoFullView({ theme, onClose }: { theme: FigmaTheme; onClose: ()
           <Row align="center" justify="space-between" style={{ padding: "16px 20px", borderBottom: `1px solid ${theme.stroke.secondary}` }}>
             <Text weight="semibold">Review & Submit Credit Memo Report</Text>
             <Row gap={8}>
-              <Button variant="ghost" style={{ height: 28, fontSize: 11 }}>Actions ▾</Button>
+              <ActionsMenu
+                theme={theme}
+                label="Actions ▾"
+                menuKey="memoActionsMenu"
+                items={[
+                  { label: "Assign reviewer", onClick: () => showActionToast("Assigned to M. Chen (Risk Officer)") },
+                  { label: "Request revisions", onClick: () => showActionToast("Revision request logged to audit trail") },
+                  { label: "Print preview", onClick: () => showActionToast("Opening print preview…") },
+                ]}
+              />
               <ExportDropdown theme={theme} caseRef="MEMO-REPORT" />
               <button
                 type="button"
@@ -3274,30 +3521,94 @@ function CreditMemoFullView({ theme, onClose }: { theme: FigmaTheme; onClose: ()
                 const isExpanded = expandedSections.includes(section.id);
                 return (
                   <div key={section.id} style={{ borderBottom: `1px solid ${theme.stroke.tertiary}` }}>
-                    <button
-                      type="button"
-                      onClick={() => toggle(section.id)}
-                      style={{
-                        width: "100%",
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "14px 0",
-                        fontFamily: "Inter, sans-serif",
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: theme.text.primary,
-                      }}
+                    <Row
+                      align="center"
+                      justify="space-between"
+                      style={{ padding: "14px 0" }}
                     >
-                      <Row gap={8} align="center">
+                      <button
+                        type="button"
+                        onClick={() => toggle(section.id)}
+                        style={{
+                          flex: 1,
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: 0,
+                          fontFamily: "Inter, sans-serif",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: theme.text.primary,
+                          textAlign: "left",
+                        }}
+                      >
                         <span style={{ color: theme.text.quaternary }}>{isExpanded ? "∨" : "›"}</span>
                         {section.title}
-                      </Row>
-                      <span style={{ fontSize: 11, color: theme.text.tertiary, fontWeight: 400 }}>+ Comment</span>
-                    </button>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCommentSection(commentSection === section.id ? null : section.id)}
+                        style={{
+                          fontSize: 11,
+                          color: theme.text.tertiary,
+                          fontWeight: 400,
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          fontFamily: "Inter, sans-serif",
+                          flexShrink: 0,
+                          marginLeft: 8,
+                        }}
+                      >
+                        + Comment
+                      </button>
+                    </Row>
+                    {commentSection === section.id && (
+                      <Stack gap={6} style={{ paddingBottom: 8 }}>
+                        <textarea
+                          value={commentDraft}
+                          onChange={(e) => setCommentDraft(e.target.value)}
+                          placeholder="Add analyst comment…"
+                          rows={2}
+                          style={{
+                            width: "100%",
+                            border: `1px solid ${theme.stroke.secondary}`,
+                            borderRadius: 6,
+                            padding: 8,
+                            fontSize: 12,
+                            fontFamily: "Inter, sans-serif",
+                            resize: "vertical",
+                          }}
+                        />
+                        <Row gap={8} justify="end">
+                          <Button
+                            variant="ghost"
+                            style={{ height: 26, fontSize: 11 }}
+                            onClick={() => {
+                              setCommentSection(null);
+                              setCommentDraft("");
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            variant="primary"
+                            style={{ height: 26, fontSize: 11 }}
+                            disabled={!commentDraft.trim()}
+                            onClick={() => {
+                              showActionToast(`Comment saved on "${section.title}"`);
+                              setCommentSection(null);
+                              setCommentDraft("");
+                            }}
+                          >
+                            Save comment
+                          </Button>
+                        </Row>
+                      </Stack>
+                    )}
                     {isExpanded && (
                       <div style={{ paddingBottom: 16 }}>
                         {section.content}
@@ -3419,6 +3730,17 @@ function CreditMemoFullView({ theme, onClose }: { theme: FigmaTheme; onClose: ()
               <AgentTag agentId="decision" theme={theme} />
               <Text size="small" tone="tertiary">Decision Synthesis · {new Date().toLocaleDateString()}</Text>
             </Row>
+            <Button
+              variant="primary"
+              style={{ height: 32, fontSize: 12, width: "100%" }}
+              onClick={() => {
+                onSubmit?.();
+                showActionToast("Credit memo submitted — Gate 4 sign-off recorded");
+                onClose();
+              }}
+            >
+              Submit & sign Gate 4
+            </Button>
           </Stack>
         </div>
       </div>
@@ -3545,8 +3867,8 @@ function PortfolioView({
               <AgentTag agentId="sentinel" theme={theme} />
               <Text size="small" tone="tertiary">DSCR 0.95x · Floor plan utilization 88%</Text>
             </Row>
-            <Button variant="ghost" onClick={() => openCase("northern-retail", "intake")}>
-              View case → AutoWest (demo: Northern Retail)
+            <Button variant="ghost" onClick={() => openCase("walmart", "assessment")}>
+              View case → AutoWest (assessment workspace)
             </Button>
           </Stack>
         </div>
@@ -3622,14 +3944,20 @@ function CommandCenterView({
             theme={theme}
             demoLabel="Synthetic portfolio queue — demo breadth"
             trustFooter={
-              <QueueTrustFooter gate="Gate 3 pending" reviewMin="20 min" stageLabel="Assessment" theme={theme} />
+              <QueueTrustFooter
+                gate="Gate 3 pending"
+                reviewMin="20 min"
+                stageLabel="Assessment"
+                theme={theme}
+                onViewStage={() => openCase("walmart", "assessment")}
+              />
             }
           >
             <AgentTag agentId="sentinel" theme={theme} />
             <Text size="small" tone="secondary">
               Covenant breach: Current Ratio 0.85x (req &gt;1.2x). DSCR 0.95x.
             </Text>
-            <Button variant="primary" onClick={() => openCase("northern-retail", "intake")}>
+            <Button variant="primary" onClick={() => openCase("walmart", "assessment")}>
               Open case workspace
             </Button>
           </DxpQueueCard>
@@ -3737,7 +4065,7 @@ function CommandCenterView({
             "Sentinel: covenant breach detected",
             "~1.2 days",
             <Pill tone="deleted">Critical</Pill>,
-            <Button variant="ghost" onClick={() => setView("portfolio")}>View alert</Button>,
+            <Button variant="ghost" onClick={() => openCase("walmart", "assessment")}>View alert</Button>,
           ],
           [
             "Borrower 5",
@@ -3746,7 +4074,7 @@ function CommandCenterView({
             "Mapping complete — awaiting Gate 2",
             "~1.8 days",
             <Pill tone="success">98% conf</Pill>,
-            "Monitor",
+            <Button variant="ghost" onClick={() => openCase("walmart", "mapping")}>Monitor</Button>,
           ],
         ]}
         striped
@@ -4491,6 +4819,9 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
   const [auditAppend, setAuditAppend] = useCanvasState<AuditEvent[]>("auditAppend", []);
   const [memoOpen, setMemoOpen] = useCanvasState<boolean>("memoFullOpen", false);
   const [lastCreatedLabel] = useCanvasState<string>("lastCreatedCaseLabel", "");
+  const [, setSavedAt] = useCanvasState<string>("caseSavedAt", "");
+  const [mappingSearch, setMappingSearch] = useCanvasState<string>("mappingFieldSearch", "");
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
   const caseDef = CASES[caseId];
   const caseAudit = auditAppend.filter((e) => e.caseId === caseId);
@@ -4498,12 +4829,26 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
   const newEntryIds = new Set(caseAudit.map((e) => e.id));
   const activeTrace = caseDef.traces[stageId];
   const selectedRow = caseDef.mappingData.find((r) => r.field === selectedField) ?? null;
+  const mappingQuery = mappingSearch.trim().toLowerCase();
+  const filteredMapping = caseDef.mappingData.filter(
+    (r) =>
+      mappingQuery === "" ||
+      r.field.toLowerCase().includes(mappingQuery) ||
+      r.value.toLowerCase().includes(mappingQuery),
+  );
   const isNorthern = caseId === "northern-retail";
   const receivedCount = caseDef.intakeDocs.filter((d) => d.received).length;
 
   const appendAudit = (action: GateAction) => {
     const event = makeAuditEvent(caseId, action);
     setAuditAppend([...auditAppend, event]);
+    if (action.kind === "gate2-sign") showActionToast("Gate 2 signed — mapping approved");
+    else if (action.kind === "gate3-sign") showActionToast("Gate 3 signed — risk assessment approved");
+    else if (action.kind === "gate4-sign") showActionToast("Gate 4 signed — credit memo approved");
+    else if (action.kind === "gate5-sign") showActionToast("Gate 5 signed — committee decision recorded");
+    else if (action.kind === "intake-override") showActionToast("Intake override logged to audit trail");
+    else if (action.kind === "mapping-accept") showActionToast(`Accepted mapping for ${action.field}`);
+    else if (action.kind === "mapping-override") showActionToast("Override logged with reason and timestamp");
   };
 
   const switchCase = (id: CaseId) => {
@@ -4528,7 +4873,13 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
 
   return (
     <Stack gap={12}>
-      {memoOpen && <CreditMemoFullView theme={theme} onClose={() => setMemoOpen(false)} />}
+      {memoOpen && (
+        <CreditMemoFullView
+          theme={theme}
+          onClose={() => setMemoOpen(false)}
+          onSubmit={() => appendAudit({ kind: "gate4-sign" })}
+        />
+      )}
       {lastCreatedLabel && (
         <Callout tone="success" title={`Case created: ${lastCreatedLabel}`}>
           Intake Agent queued document validation for {lastCreatedLabel}. Demo opens the nearest matching workspace template.
@@ -4548,7 +4899,26 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
             <Row gap={8} align="center">
               <CollaboratorAvatars theme={theme} initials={["SW", "MC", "J"]} />
               <ExportDropdown theme={theme} caseRef={caseDef.caseRef} />
-              <Button variant="ghost" style={{ height: 28, fontSize: 11 }}>Save</Button>
+              <ActionsMenu
+                theme={theme}
+                label="···"
+                menuKey="caseHeaderMenu"
+                items={[
+                  { label: "Duplicate case", onClick: () => showActionToast("Case duplicated (demo)") },
+                  { label: "Archive case", onClick: () => showActionToast("Archive request logged") },
+                  { label: "View audit trail", onClick: () => showActionToast("Scroll to runtime log below") },
+                ]}
+              />
+              <Button
+                variant="ghost"
+                style={{ height: 28, fontSize: 11 }}
+                onClick={() => {
+                  setSavedAt(new Date().toLocaleTimeString());
+                  showActionToast(`Case draft saved · ${caseDef.caseRef}`);
+                }}
+              >
+                Save
+              </Button>
               <Button variant="primary" style={{ height: 28, fontSize: 11 }} onClick={() => setMemoOpen(true)}>
                 Generate Report
               </Button>
@@ -4628,7 +4998,20 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                   </Text>
                   <Row gap={8} align="center">
                     <AgentTag agentId="intake" theme={theme} />
-                    <Button variant="ghost" style={{ height: 26, fontSize: 11 }}>↑ Upload</Button>
+                    <input
+                      ref={uploadInputRef}
+                      type="file"
+                      accept=".pdf,.xlsx,.csv"
+                      style={{ display: "none" }}
+                      onChange={() => showActionToast("Document queued — Intake Agent will OCR and validate against SOP §4.2")}
+                    />
+                    <Button
+                      variant="ghost"
+                      style={{ height: 26, fontSize: 11 }}
+                      onClick={() => uploadInputRef.current?.click()}
+                    >
+                      ↑ Upload
+                    </Button>
                   </Row>
                 </Row>
                 {isNorthern ? (
@@ -4698,7 +5081,11 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                   <Button
                     variant="primary"
                     style={{ height: 28, fontSize: 11, margin: "0 12px", flexShrink: 0 }}
-                    onClick={() => setMemoOpen(true)}
+                    onClick={() => {
+                      setDetailTab("extracted");
+                      setSelectedField("Total Assets");
+                      showActionToast("Spread workspace active — extracted values panel");
+                    }}
                   >
                     Launch Spread ↗
                   </Button>
@@ -4708,9 +5095,20 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                   justify="space-between"
                   style={{ padding: "8px 16px", borderBottom: `1px solid ${theme.stroke.tertiary}` }}
                 >
-                  <Text size="small" tone="tertiary">
-                    Search fields
-                  </Text>
+                  <input
+                    type="text"
+                    value={mappingSearch}
+                    onChange={(e) => setMappingSearch(e.target.value)}
+                    placeholder="Search fields"
+                    style={{
+                      border: `1px solid ${theme.stroke.secondary}`,
+                      borderRadius: 4,
+                      padding: "4px 8px",
+                      fontSize: 12,
+                      width: 160,
+                      fontFamily: "Inter, sans-serif",
+                    }}
+                  />
                   <Row gap={8} align="center">
                     <Text size="small" tone="tertiary">
                       Extraction Confidence
@@ -4726,7 +5124,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                     {detailTab === "extracted" && (
                       <Table
                         headers={["Field", "Value", "Status", "Confidence", "Agent", ""]}
-                        rows={caseDef.mappingData.map((r) => {
+                        rows={filteredMapping.map((r) => {
                           const cp = confidencePill(r.confidence);
                           return [
                             r.field,
@@ -4739,7 +5137,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                             </Button>,
                           ];
                         })}
-                        rowTone={caseDef.mappingData.map((r) =>
+                        rowTone={filteredMapping.map((r) =>
                           r.confidence === "review" ? "warning" : r.confidence === "high" ? "success" : "neutral"
                         )}
                         striped
@@ -4922,14 +5320,13 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                     required to close the case.
                   </Callout>
                   <Row gap={8} wrap>
-                    <Button variant="primary" onClick={() => appendAudit({ kind: "gate2-sign" })}>
-                      Approve
-                    </Button>
+                    <GateSignOffBar
+                      mode="gate5-sign"
+                      theme={theme}
+                      onAction={(action) => appendAudit(action)}
+                    />
                     <Button variant="secondary" onClick={() => setMemoOpen(true)}>
                       View memo report
-                    </Button>
-                    <Button variant="ghost" onClick={() => appendAudit({ kind: "mapping-override", field: "committee-decision" })}>
-                      Request revisions (logged)
                     </Button>
                   </Row>
                 </CardBody>
@@ -5137,13 +5534,11 @@ function RowActionMenu({
   stage: StageId;
 }) {
   const [open, setOpen] = useCanvasState<boolean>(`rowMenu-${row.id}`, false);
-  const [toast, setToast] = useCanvasState<string>(`rowToast-${row.id}`, "");
 
   const run = (label: string, fn: () => void) => {
     fn();
-    setToast(label);
+    showActionToast(label);
     setOpen(false);
-    window.setTimeout(() => setToast(""), 2000);
   };
 
   return (
@@ -5171,14 +5566,20 @@ function RowActionMenu({
         >
           {[
             { label: "Open case", fn: () => openCase(caseId, stage) },
-            { label: "Export row", fn: () => undefined },
+            {
+              label: "Export row",
+              fn: () => {
+                const csv = `Case ID,Entity,Stage,Risk\n${row.id},${row.entity},${row.stageBadge},${row.riskStatus}`;
+                downloadExportFile(`${row.id}.csv`, csv, "text/csv;charset=utf-8");
+              },
+            },
             { label: "Add tag", fn: () => undefined },
             { label: "Archive", fn: () => undefined },
           ].map((item) => (
             <button
               key={item.label}
               type="button"
-              onClick={() => run(item.label, item.fn)}
+              onClick={() => run(`${item.label}: ${row.entity}`, item.fn)}
               style={{
                 display: "block",
                 width: "100%",
@@ -5196,11 +5597,6 @@ function RowActionMenu({
             </button>
           ))}
         </div>
-      )}
-      {toast && (
-        <Text size="small" tone="quaternary" style={{ position: "absolute", top: 36, right: 36, whiteSpace: "nowrap" }}>
-          {toast}
-        </Text>
       )}
     </div>
   );
@@ -5381,7 +5777,12 @@ function ViewInFocusToggle({ theme }: { theme: FigmaTheme }) {
 
 function CaseRowExpansion({ row, theme, openCase }: { row: CaseRowData; theme: FigmaTheme; openCase?: (id: CaseId, stage?: StageId) => void }) {
   const previewRows = MAPPING_DATA.slice(0, 4);
-  const targetCase: CaseId = row.id.startsWith("WMT") || row.id.startsWith("CHY") ? "walmart" : "northern-retail";
+  const targetCase: CaseId =
+    row.id.startsWith("WMT") || row.id.startsWith("CHY") || row.id.startsWith("AWM") || row.id.startsWith("VNT")
+      ? "walmart"
+      : "northern-retail";
+  const targetStage: StageId =
+    row.id.startsWith("AWM") || row.id.startsWith("VNT") ? "assessment" : row.id.startsWith("NRT") ? "intake" : "review";
   return (
     <div style={{ padding: "12px 16px", background: theme.bg.elevated, borderTop: `1px solid ${theme.stroke.tertiary}` }}>
       <Stack gap={8}>
@@ -5403,7 +5804,7 @@ function CaseRowExpansion({ row, theme, openCase }: { row: CaseRowData; theme: F
         <Row align="center" justify="space-between">
           <Text size="small" tone="quaternary">Showing 4 of 140 fields</Text>
           {openCase && (
-            <Button variant="primary" style={{ height: 28, fontSize: 11 }} onClick={() => openCase(targetCase, "review")}>
+            <Button variant="primary" style={{ height: 28, fontSize: 11 }} onClick={() => openCase(targetCase, targetStage)}>
               Open full case →
             </Button>
           )}
@@ -5426,7 +5827,6 @@ function CasesListView({
   const [filterOpen, setFilterOpen] = useCanvasState<boolean>("casesFilterOpen", false);
   const [viewMode, setViewMode] = useCanvasState<"list" | "grid">("casesViewMode", "list");
   const [selected, setSelected] = useCanvasState<string[]>("casesSelected", []);
-  const [bulkToast, setBulkToast] = useCanvasState<string>("casesBulkToast", "");
   const [inFocusOpen] = useCanvasState<boolean>("inFocusOpen", true);
 
   function riskTone(r: RiskStatus): "deleted" | "warning" | "success" {
@@ -5439,7 +5839,8 @@ function CasesListView({
   }
   function caseForRow(row: CaseRowData): { caseId: CaseId; stage: StageId } {
     if (row.id.startsWith("WMT") || row.id.startsWith("CHY")) return { caseId: "walmart", stage: "review" };
-    if (row.id.startsWith("AWM") || row.id.startsWith("VNT") || row.id.startsWith("NRT")) return { caseId: "northern-retail", stage: "intake" };
+    if (row.id.startsWith("AWM") || row.id.startsWith("VNT")) return { caseId: "walmart", stage: "assessment" };
+    if (row.id.startsWith("NRT")) return { caseId: "northern-retail", stage: "intake" };
     if (row.id.startsWith("HRZ") || row.id.startsWith("MBE") || row.id.startsWith("SXT")) return { caseId: "walmart", stage: "assessment" };
     return { caseId: "walmart", stage: "memo" };
   }
@@ -5475,14 +5876,25 @@ function CasesListView({
   };
   const runBulk = (action: string) => {
     const count = visibleSelected.length;
-    if (count > 0) {
-      setBulkToast(`${action}: ${count} case(s)`);
-    } else if (selected.length > 0) {
-      setBulkToast(`${action}: ${selected.length} selected off-screen — clear filter`);
-    } else {
-      setBulkToast(`${action}: select cases first`);
+    if (count === 0) {
+      const msg =
+        selected.length > 0
+          ? `${action}: ${selected.length} selected off-screen — clear filter`
+          : `${action}: select cases first`;
+      showActionToast(msg);
+      return;
     }
-    window.setTimeout(() => setBulkToast(""), 2500);
+    if (action === "Download") {
+      const rows = filteredRows.filter((r) => visibleSelected.includes(r.id));
+      const csv = [
+        "Case ID,Entity,Stage,Risk,Exposure",
+        ...rows.map((r) => `${r.id},${r.entity},${r.stageBadge},${r.riskStatus},${r.exposure}`),
+      ].join("\n");
+      downloadExportFile(`cases-export-${rows.length}.csv`, csv, "text/csv;charset=utf-8");
+      showActionToast(`Downloaded ${count} case(s)`);
+      return;
+    }
+    showActionToast(`${action}: ${count} case(s) updated`);
   };
 
   return (
@@ -5589,7 +6001,6 @@ function CasesListView({
             <Text size="small" tone="tertiary">
               {rangeLabel}
             </Text>
-            {bulkToast && <Text size="small" tone="quaternary">{bulkToast}</Text>}
             <ToolbarIconButton icon="↓" title="Download selected" theme={theme} onClick={() => runBulk("Download")} />
             <ToolbarIconButton icon="🏷" title="Tag selected" theme={theme} onClick={() => runBulk("Tag")} />
             <ToolbarIconButton icon="📁" title="Move to folder" theme={theme} onClick={() => runBulk("Move")} />
@@ -5852,6 +6263,7 @@ export default function FinancialSpreadingACOS() {
         {view === "case" && <CaseWorkspaceView theme={theme} />}
         {view === "agents" && <AgentCatalogView theme={theme} />}
       </DxpShell>
+      <ActionToastBanner theme={theme} />
       <Text size="small" tone="quaternary" style={{ padding: "0 16px" }}>
         Demo arc: Portfolio Sentinel alert → Case briefing → Lifecycle trace → Trust inspector → Connected decision
       </Text>
