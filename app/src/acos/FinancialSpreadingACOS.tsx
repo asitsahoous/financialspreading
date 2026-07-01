@@ -403,7 +403,7 @@ function DxpQueueCard({
   );
 }
 
-type CaseDetailTab = "extracted" | "exceptions" | "corrected";
+type CaseDetailTab = "extracted" | "exceptions" | "corrected" | "normalized";
 
 function CaseDetailsTabBar({
   active,
@@ -414,12 +414,13 @@ function CaseDetailsTabBar({
   active: CaseDetailTab;
   onChange: (t: CaseDetailTab) => void;
   theme: FigmaTheme;
-  counts: { extracted: number; exceptions: number; corrected: number };
+  counts: { extracted: number; exceptions: number; corrected: number; normalized: number };
 }) {
   const tabs: { id: CaseDetailTab; label: string }[] = [
     { id: "extracted", label: `Extracted (${counts.extracted})` },
     { id: "exceptions", label: `Exceptions (${counts.exceptions})` },
     { id: "corrected", label: `Corrected (${counts.corrected})` },
+    { id: "normalized", label: `Normalized (${counts.normalized})` },
   ];
   return (
     <Row
@@ -1243,9 +1244,35 @@ const MAPPING_DATA: MappingRow[] = [
   },
 ];
 
+// GAAP normalization — raw line item broken into internal chart-of-account components
+type NormalizedRow = { lineItem: string; component: string; fy2025: string; fy2026: string; indent: number };
+
+const NORMALIZED_VALUES: NormalizedRow[] = [
+  { lineItem: "Current Assets", component: "—", fy2025: "$79,458M", fy2026: "$84,874M", indent: 0 },
+  { lineItem: "Cash", component: "Time Deposits", fy2025: "$3,167M", fy2026: "$4,987M", indent: 1 },
+  { lineItem: "Cash", component: "Marketable Securities", fy2025: "$5,870M", fy2026: "$5,740M", indent: 1 },
+  { lineItem: "Receivables", component: "Accounts Receivable - Trade", fy2025: "$9,975M", fy2026: "$11,547M", indent: 1 },
+  { lineItem: "Receivables", component: "Bad Debt Reserve", fy2025: "($312M)", fy2026: "($298M)", indent: 1 },
+  { lineItem: "Receivables", component: "Less: Due From Related Co", fy2025: "($104M)", fy2026: "($98M)", indent: 1 },
+  { lineItem: "Receivables", component: "Due From Related Co", fy2025: "$104M", fy2026: "$98M", indent: 1 },
+  { lineItem: "Receivables", component: "Accounts Receivable - Other", fy2025: "$1,412M", fy2026: "$1,556M", indent: 1 },
+  { lineItem: "Receivables", component: "Reserve for Receivable", fy2025: "($187M)", fy2026: "($172M)", indent: 1 },
+  { lineItem: "Receivables", component: "Deferred Income Tax Recoverable", fy2025: "$96M", fy2026: "$104M", indent: 1 },
+  { lineItem: "Inventories", component: "Raw Materials", fy2025: "$8,210M", fy2026: "$8,940M", indent: 1 },
+  { lineItem: "Inventories", component: "Finished Goods", fy2025: "$48,225M", fy2026: "$49,911M", indent: 1 },
+];
+
 type CaseId = "walmart" | "northern-retail";
 
-type IntakeDocRow = { name: string; received: boolean; sopRef: string };
+type IntakeDocRow = {
+  name: string;
+  received: boolean;
+  sopRef: string;
+  classification?: string;
+  uploadedBy?: string;
+  uploadedOn?: string;
+  sizeKb?: number;
+};
 
 type EntityIdType = "EIN" | "SSN" | "ITIN" | "DUNS";
 
@@ -1473,15 +1500,15 @@ const CASES: Record<CaseId, CaseDefinition> = {
     runtimeLog: WALMART_RUNTIME_LOG,
     mappingData: MAPPING_DATA,
     intakeDocs: [
-      { name: "10-K Annual Filing", received: true, sopRef: "§4.2.1" },
-      { name: "Credit Application", received: true, sopRef: "§4.2.2" },
-      { name: "Q3 Cash Flow Stmt", received: true, sopRef: "§4.2.3" },
-      { name: "Covenant Schedule", received: true, sopRef: "§4.2.4" },
-      { name: "Auditor Letter", received: true, sopRef: "§4.2.5" },
-      { name: "Management Representation", received: true, sopRef: "§4.2.6" },
-      { name: "Intercompany Schedule", received: true, sopRef: "§4.2.7" },
-      { name: "Guarantor Financials", received: true, sopRef: "§4.2.8" },
-      { name: "Collateral Appraisal", received: true, sopRef: "§4.2.9" },
+      { name: "10-K Annual Filing", received: true, sopRef: "§4.2.1", classification: "Annual Filing", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 1:58 AM", sizeKb: 4820 },
+      { name: "Credit Application", received: true, sopRef: "§4.2.2", classification: "Application", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 1:58 AM", sizeKb: 340 },
+      { name: "Q3 Cash Flow Stmt", received: true, sopRef: "§4.2.3", classification: "Cash Flow Statement", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 1:59 AM", sizeKb: 520 },
+      { name: "Covenant Schedule", received: true, sopRef: "§4.2.4", classification: "Covenant Schedule", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 1:59 AM", sizeKb: 180 },
+      { name: "Auditor Letter", received: true, sopRef: "§4.2.5", classification: "Auditor Letter", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 2:00 AM", sizeKb: 96 },
+      { name: "Management Representation", received: true, sopRef: "§4.2.6", classification: "Mgmt Representation", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 2:00 AM", sizeKb: 112 },
+      { name: "Intercompany Schedule", received: true, sopRef: "§4.2.7", classification: "Intercompany Schedule", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 2:01 AM", sizeKb: 204 },
+      { name: "Guarantor Financials", received: true, sopRef: "§4.2.8", classification: "Guarantor Financials", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 2:01 AM", sizeKb: 660 },
+      { name: "Collateral Appraisal", received: true, sopRef: "§4.2.9", classification: "Appraisal Report", uploadedBy: "Chloe H.", uploadedOn: "Mar 16, 2:02 AM", sizeKb: 1240 },
     ],
     connectorFeeds: WALMART_CONNECTORS,
     memoSections: WALMART_MEMO_SECTIONS,
@@ -1507,8 +1534,8 @@ const CASES: Record<CaseId, CaseDefinition> = {
     runtimeLog: NORTHERN_RETAIL_RUNTIME_LOG,
     mappingData: [],
     intakeDocs: [
-      { name: "Credit Application", received: true, sopRef: "§4.2.2" },
-      { name: "FY2024 Annual Report", received: true, sopRef: "§4.2.1" },
+      { name: "Credit Application", received: true, sopRef: "§4.2.2", classification: "Application", uploadedBy: "Borrower Portal", uploadedOn: "Mar 17, 1:42 AM", sizeKb: 310 },
+      { name: "FY2024 Annual Report", received: true, sopRef: "§4.2.1", classification: "Annual Filing", uploadedBy: "Borrower Portal", uploadedOn: "Mar 17, 1:42 AM", sizeKb: 1980 },
       { name: "Q3 Cash Flow Statement", received: false, sopRef: "§4.2.3" },
       { name: "Covenant Schedule", received: false, sopRef: "§4.2.4" },
       { name: "Auditor Letter", received: false, sopRef: "§4.2.5" },
@@ -1664,7 +1691,7 @@ const CASE_ROWS: CaseRowData[] = [
 
 // ─── Ratio / Validate data ────────────────────────────────────────────────────
 
-type RatioTab = "summary" | "liquidity" | "profitability" | "solvency";
+type RatioTab = "summary" | "liquidity" | "profitability" | "solvency" | "efficiency";
 
 type RatioCardData = {
   label: string;
@@ -1794,6 +1821,47 @@ const RATIO_DATA: Record<Exclude<RatioTab, "summary">, RatioCardData[]> = {
       trend2024: [2.0, 2.1, 2.2, 2.25, 2.3, 2.35, 2.4, 2.42],
       trendLabel: "2.73",
       trendChange: "+13%",
+      trendChangeTone: "positive",
+    },
+  ],
+  efficiency: [
+    {
+      label: "Asset Turnover",
+      actual: 2.28,
+      threshold: 2.0,
+      unit: "x",
+      status: "pass",
+      explanation: "Revenue generated per dollar of assets is above the 2.0x efficiency benchmark for retail.",
+      trend2025: [2.10, 2.14, 2.16, 2.18, 2.20, 2.23, 2.26, 2.28],
+      trend2024: [2.05, 2.08, 2.10, 2.12, 2.14, 2.16, 2.18, 2.20],
+      trendLabel: "2.28",
+      trendChange: "+4%",
+      trendChangeTone: "positive",
+    },
+    {
+      label: "Inventory Turnover",
+      actual: 8.34,
+      threshold: 7.5,
+      unit: "x",
+      status: "pass",
+      explanation: "Inventory cycles 8.3x per year — faster than the 7.5x industry benchmark, indicating strong sell-through.",
+      trend2025: [7.8, 7.9, 8.0, 8.1, 8.15, 8.2, 8.28, 8.34],
+      trend2024: [7.5, 7.6, 7.7, 7.75, 7.8, 7.85, 7.9, 7.95],
+      trendLabel: "8.34",
+      trendChange: "+5%",
+      trendChangeTone: "positive",
+    },
+    {
+      label: "Days Sales Outstanding",
+      actual: 6.3,
+      threshold: 7.0,
+      unit: " days",
+      status: "pass",
+      explanation: "Receivables collected in 6.3 days on average — better than the 7.0 day policy target.",
+      trend2025: [6.8, 6.7, 6.6, 6.5, 6.4, 6.35, 6.32, 6.3],
+      trend2024: [7.0, 6.9, 6.85, 6.8, 6.75, 6.7, 6.65, 6.6],
+      trendLabel: "6.3d",
+      trendChange: "-4%",
       trendChangeTone: "positive",
     },
   ],
@@ -1931,7 +1999,7 @@ type GateAction =
   | { kind: "gate3-sign" }
   | { kind: "gate4-sign" }
   | { kind: "mapping-accept"; field: string }
-  | { kind: "mapping-override"; field: string }
+  | { kind: "mapping-override"; field: string; correctedValue?: string; note?: string }
   | { kind: "intake-override" };
 
 function GateSignOffBar({
@@ -2203,6 +2271,7 @@ function makeAuditEvent(caseId: CaseId, action: GateAction): AuditEvent {
   }
   if (action.kind === "mapping-override") {
     const field = action.field === "spread" ? "spread sign-off" : action.field;
+    const hasCorrection = Boolean(action.correctedValue);
     return {
       id: `audit-${Date.now()}-override`,
       caseId,
@@ -2210,8 +2279,10 @@ function makeAuditEvent(caseId: CaseId, action: GateAction): AuditEvent {
       stage: "Review",
       actorKind: "human",
       actor: "Sarah W. (Credit Analyst)",
-      input: `Override request: ${field}`,
-      reasoning: "Documented exception override — reason: verified against audited financials; scale corrected to $252.5B",
+      input: `Override request: ${field}${hasCorrection ? ` → corrected to ${action.correctedValue}` : ""}`,
+      reasoning: action.note
+        ? `Documented exception override — reason: ${action.note}`
+        : "Documented exception override — reason: verified against audited financials; scale corrected to $252.5B",
       output: `Override logged with reason and timestamp — audit ID trace-override-${Date.now()}`,
     };
   }
@@ -2505,6 +2576,97 @@ type PipelineStep = {
   badge?: number;
 };
 
+function ExportDropdown({ theme, caseRef }: { theme: FigmaTheme; caseRef: string }) {
+  const [open, setOpen] = useCanvasState<boolean>("exportDropdownOpen", false);
+  const [lastExport, setLastExport] = useCanvasState<string>("lastExportFormat", "");
+
+  const handleExport = (format: "PDF" | "Excel") => {
+    setLastExport(`${format} · ${caseRef} · ${new Date().toLocaleTimeString()}`);
+    setOpen(false);
+  };
+
+  return (
+    <div style={{ position: "relative" }}>
+      <Button variant="secondary" style={{ height: 28, fontSize: 11 }} onClick={() => setOpen(!open)}>
+        Export ▾
+      </Button>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: 32,
+            right: 0,
+            background: theme.bg.editor,
+            border: `1px solid ${theme.stroke.secondary}`,
+            borderRadius: 8,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+            zIndex: 50,
+            minWidth: 160,
+            overflow: "hidden",
+          }}
+        >
+          {(["PDF", "Excel"] as const).map((fmt) => (
+            <button
+              key={fmt}
+              type="button"
+              onClick={() => handleExport(fmt)}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                padding: "8px 12px",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontSize: 12,
+                fontFamily: "Inter, sans-serif",
+                color: theme.text.primary,
+              }}
+            >
+              Export as {fmt}
+            </button>
+          ))}
+        </div>
+      )}
+      {lastExport && !open && (
+        <Text size="small" tone="quaternary" style={{ position: "absolute", top: 32, right: 0, whiteSpace: "nowrap" }}>
+          Last: {lastExport}
+        </Text>
+      )}
+    </div>
+  );
+}
+
+function CollaboratorAvatars({ theme, initials }: { theme: FigmaTheme; initials: string[] }) {
+  const colors = ["#0D9488", "#E91E8C", "#7B64B8"];
+  return (
+    <div style={{ display: "flex" }}>
+      {initials.map((initial, i) => (
+        <div
+          key={initial}
+          title={`${initial} is viewing this case`}
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: "50%",
+            background: colors[i % colors.length],
+            border: `2px solid ${theme.bg.editor}`,
+            marginLeft: i > 0 ? -8 : 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 9,
+            fontWeight: 700,
+            color: "#fff",
+          }}
+        >
+          {initial}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CasePipelineStepper({ steps, theme }: { steps: PipelineStep[]; theme: FigmaTheme }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 0, padding: "10px 0" }}>
@@ -2663,12 +2825,21 @@ function Sparkline({
 
 function ValidateRatiosPanel({ theme }: { theme: FigmaTheme }) {
   const [tab, setTab] = useCanvasState<RatioTab>("ratioTab", "summary");
+  const [calculating, setCalculating] = useCanvasState<boolean>("ratioCalculating", false);
   const tabs: { id: RatioTab; label: string }[] = [
     { id: "summary", label: "Summary" },
     { id: "liquidity", label: "Liquidity" },
     { id: "profitability", label: "Profitability" },
     { id: "solvency", label: "Solvency" },
+    { id: "efficiency", label: "Efficiency" },
   ];
+
+  const handleTabChange = (next: RatioTab) => {
+    if (next === tab) return;
+    setCalculating(true);
+    setTab(next);
+    window.setTimeout(() => setCalculating(false), 550);
+  };
 
   return (
     <div
@@ -2693,7 +2864,7 @@ function ValidateRatiosPanel({ theme }: { theme: FigmaTheme }) {
             <button
               key={t.id}
               type="button"
-              onClick={() => setTab(t.id)}
+              onClick={() => handleTabChange(t.id)}
               style={{
                 background: "none",
                 border: "none",
@@ -2712,7 +2883,23 @@ function ValidateRatiosPanel({ theme }: { theme: FigmaTheme }) {
         })}
       </Row>
       <div style={{ padding: 16 }}>
-        {tab === "summary" && (
+        {calculating && (
+          <Row gap={8} align="center" style={{ padding: "24px 0", justifyContent: "center" }}>
+            <div
+              style={{
+                width: 16,
+                height: 16,
+                borderRadius: "50%",
+                border: `2px solid ${theme.stroke.tertiary}`,
+                borderTopColor: theme.accent.primary,
+                animation: "acos-spin 0.7s linear infinite",
+              }}
+            />
+            <Text size="small" tone="tertiary">Calculating ratios…</Text>
+            <style>{"@keyframes acos-spin { to { transform: rotate(360deg); } }"}</style>
+          </Row>
+        )}
+        {!calculating && tab === "summary" && (
           <Table
             headers={["Financial Metrics", "FY2025", "FY2026", "Change"]}
             rows={SUMMARY_METRICS.map((m) => [
@@ -2731,7 +2918,7 @@ function ValidateRatiosPanel({ theme }: { theme: FigmaTheme }) {
             striped
           />
         )}
-        {tab !== "summary" && (
+        {!calculating && tab !== "summary" && (
           <Row gap={16} align="start">
             <Stack gap={8} style={{ flex: "0 0 280px" }}>
               {(RATIO_DATA[tab as Exclude<RatioTab, "summary">] ?? []).map((r) => {
@@ -3990,6 +4177,27 @@ function LifecycleRail({
   );
 }
 
+// Cascading impact — which downstream totals move when a field is corrected
+const IMPACT_MAP: Record<string, { metric: string; current: string; updated: string }[]> = {
+  "Total Assets": [
+    { metric: "Total Assets", current: "$100K", updated: "$284,668M" },
+    { metric: "Total Current Assets", current: "$84,874M", updated: "$84,874M" },
+    { metric: "Current Ratio", current: "0.001x", updated: "0.82x" },
+    { metric: "D/E Ratio", current: "354.2x", updated: "0.46x" },
+    { metric: "Health Score", current: "1.2 / 10", updated: "7.2 / 10" },
+  ],
+};
+
+type ChangeLogEntry = { timestamp: string; actor: string; action: string; detail: string };
+
+const DEFAULT_CHANGE_LOG: ChangeLogEntry[] = [
+  { timestamp: "Mar 16, 2:22 AM", actor: "Document Intelligence", action: "Extracted", detail: "OCR pass — page 43, confidence 41%" },
+  { timestamp: "Mar 16, 2:31 AM", actor: "Mapping Agent", action: "Mapped", detail: "Mapped to TOTAL_ASSETS per SOP §7.4" },
+  { timestamp: "Mar 16, 2:33 AM", actor: "Review QA", action: "Flagged", detail: "YoY variance 99.99% — scale mismatch suspected" },
+];
+
+type TrustInspectorTab = "impact" | "changelog";
+
 function TrustInspector({
   row,
   theme,
@@ -4001,8 +4209,12 @@ function TrustInspector({
   theme: ReturnType<typeof useHostTheme>;
   onClose: () => void;
   onAccept?: (field: string) => void;
-  onOverride?: (field: string) => void;
+  onOverride?: (field: string, correctedValue: string, note: string) => void;
 }) {
+  const [tab, setTab] = useCanvasState<TrustInspectorTab>("trustInspectorTab", "impact");
+  const [correctedValue, setCorrectedValue] = useCanvasState<string>("trustInspectorCorrectedValue", "");
+  const [note, setNote] = useCanvasState<string>("trustInspectorNote", "");
+
   if (!row) return null;
   const cp = confidencePill(row.confidence);
   const agent = AGENTS[row.agentId];
@@ -4011,6 +4223,20 @@ function TrustInspector({
     (row.confidence === "review"
       ? "Review Agent flagged this field for analyst verification."
       : `Mapped per ${row.sop ?? "SOP"}; high-confidence extraction from ${row.source ?? "source document"}.`);
+  const impact = IMPACT_MAP[row.field];
+
+  const handleApply = () => {
+    onOverride?.(row.field, correctedValue || row.value, note);
+    setCorrectedValue("");
+    setNote("");
+  };
+
+  const handleCancel = () => {
+    setCorrectedValue("");
+    setNote("");
+    onClose();
+  };
+
   return (
     <Card>
       <CardHeader
@@ -4062,6 +4288,112 @@ function TrustInspector({
             </Callout>
           )}
           <Divider />
+
+          {/* Impact / Change Log tabs */}
+          <Row gap={0} style={{ borderBottom: `1px solid ${theme.stroke.tertiary}` }}>
+            {([
+              { id: "impact" as const, label: "Impact" },
+              { id: "changelog" as const, label: "Change Log" },
+            ]).map((t) => {
+              const isActive = t.id === tab;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTab(t.id)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    borderBottom: isActive ? "2px solid #1860ec" : "2px solid transparent",
+                    padding: "6px 10px",
+                    fontSize: 12,
+                    fontWeight: isActive ? 600 : 400,
+                    color: isActive ? theme.text.primary : theme.text.tertiary,
+                    cursor: "pointer",
+                    fontFamily: "Inter, sans-serif",
+                  }}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </Row>
+
+          {tab === "impact" && (
+            <Stack gap={8}>
+              {impact ? (
+                <>
+                  <Text size="small" tone="tertiary">
+                    Correcting this field cascades to {impact.length - 1} downstream metric(s):
+                  </Text>
+                  <Table
+                    headers={["Metric", "Current", "Updated"]}
+                    rows={impact.map((i) => [
+                      i.metric,
+                      <Text size="small" tone="tertiary">{i.current}</Text>,
+                      <Text size="small" weight="semibold" style={{ color: theme.category.green }}>{i.updated}</Text>,
+                    ])}
+                    striped
+                  />
+                </>
+              ) : (
+                <Text size="small" tone="tertiary">
+                  No downstream metrics depend on this field.
+                </Text>
+              )}
+            </Stack>
+          )}
+
+          {tab === "changelog" && (
+            <Stack gap={6}>
+              {DEFAULT_CHANGE_LOG.map((entry, i) => (
+                <div key={i} style={{ ...dxpCard(theme), padding: "8px 10px" }}>
+                  <Row align="center" justify="space-between">
+                    <Text size="small" weight="semibold">{entry.action}</Text>
+                    <Text size="small" tone="quaternary">{entry.timestamp}</Text>
+                  </Row>
+                  <Text size="small" tone="tertiary">{entry.actor} — {entry.detail}</Text>
+                </div>
+              ))}
+            </Stack>
+          )}
+
+          <Divider />
+
+          {/* Corrected value + note */}
+          <Stack gap={6}>
+            <Text size="small" weight="semibold">Corrected value</Text>
+            <input
+              type="text"
+              value={correctedValue}
+              onChange={(e) => setCorrectedValue(e.target.value)}
+              placeholder={row.value}
+              style={{
+                padding: "6px 10px",
+                borderRadius: 6,
+                border: `1px solid ${theme.stroke.secondary}`,
+                fontSize: 13,
+                fontFamily: "Inter, sans-serif",
+              }}
+            />
+            <Text size="small" weight="semibold">Note</Text>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Type your message here"
+              rows={2}
+              style={{
+                padding: "6px 10px",
+                borderRadius: 6,
+                border: `1px solid ${theme.stroke.secondary}`,
+                fontSize: 13,
+                fontFamily: "Inter, sans-serif",
+                resize: "vertical",
+              }}
+            />
+          </Stack>
+
+          <Divider />
           <Text size="small" tone="tertiary">
             Agent: {agent.name} · Audit ID {row.auditId ?? `trace-${row.field.toLowerCase().replace(/\s/g, "-")}`}
           </Text>
@@ -4069,8 +4401,11 @@ function TrustInspector({
             <Button variant="primary" onClick={() => onAccept?.(row.field)}>
               Accept mapping
             </Button>
-            <Button variant="ghost" onClick={() => onOverride?.(row.field)}>
-              Override with reason
+            <Button variant="ghost" onClick={handleCancel}>
+              Cancel
+            </Button>
+            <Button variant="secondary" onClick={handleApply} disabled={!correctedValue && !note}>
+              Apply correction
             </Button>
           </Row>
         </Stack>
@@ -4136,11 +4471,8 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
               <Text size="small" tone="quaternary">···</Text>
             </Row>
             <Row gap={8} align="center">
-              <div style={{ display: "flex", gap: 2 }}>
-                {[1, 2, 3].map((i) => (
-                  <div key={i} style={{ width: 20, height: 20, borderRadius: "50%", background: theme.fill.secondary, border: `2px solid ${theme.bg.editor}`, marginLeft: i > 1 ? -6 : 0 }} />
-                ))}
-              </div>
+              <CollaboratorAvatars theme={theme} initials={["SW", "MC", "J"]} />
+              <ExportDropdown theme={theme} caseRef={caseDef.caseRef} />
               <Button variant="ghost" style={{ height: 28, fontSize: 11 }}>Save</Button>
               <Button variant="primary" style={{ height: 28, fontSize: 11 }} onClick={() => setMemoOpen(true)}>
                 Generate Report
@@ -4213,9 +4545,12 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
               <Stack gap={12}>
                 <Row align="center" justify="space-between">
                   <Text weight="semibold" size="small">
-                    Document intake — completeness ({receivedCount}/{caseDef.intakeDocs.length})
+                    Documents Uploaded ({receivedCount}/{caseDef.intakeDocs.length})
                   </Text>
-                  <AgentTag agentId="intake" theme={theme} />
+                  <Row gap={8} align="center">
+                    <AgentTag agentId="intake" theme={theme} />
+                    <Button variant="ghost" style={{ height: 26, fontSize: 11 }}>↑ Upload</Button>
+                  </Row>
                 </Row>
                 {isNorthern ? (
                   <Callout tone="warning" title="Gate 1 blocked — 7 documents missing">
@@ -4229,16 +4564,26 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                   </Callout>
                 )}
                 <Table
-                  headers={["Document", "SOP ref", "Status", "Agent"]}
+                  headers={["Document", "Classification", "SOP ref", "Status", "Uploaded By", "Uploaded On", "Size"]}
                   rows={caseDef.intakeDocs.map((doc) => [
-                    doc.name,
+                    <Row gap={6} align="center">
+                      <span style={{ fontSize: 13 }}>📄</span>
+                      <Text size="small" weight="semibold">{doc.name}</Text>
+                    </Row>,
+                    doc.classification ? (
+                      <Pill tone="info">{doc.classification}</Pill>
+                    ) : (
+                      <Text size="small" tone="quaternary">—</Text>
+                    ),
                     doc.sopRef,
                     doc.received ? (
                       <ExtractedBadge theme={theme} />
                     ) : (
                       <Pill tone="deleted">Missing</Pill>
                     ),
-                    "Intake",
+                    doc.uploadedBy ?? "—",
+                    doc.uploadedOn ?? "—",
+                    doc.sizeKb ? `${(doc.sizeKb / 1024).toFixed(1)} MB` : "—",
                   ])}
                   rowTone={caseDef.intakeDocs.map((d) => (d.received ? "success" : "danger"))}
                   striped
@@ -4269,7 +4614,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                     active={detailTab}
                     onChange={setDetailTab}
                     theme={theme}
-                    counts={{ extracted: 140, exceptions: 1, corrected: 0 }}
+                    counts={{ extracted: 140, exceptions: 1, corrected: 0, normalized: NORMALIZED_VALUES.length }}
                   />
                   <Button
                     variant="primary"
@@ -4336,6 +4681,30 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                         No analyst corrections yet. Overrides are logged with reason and timestamp.
                       </Text>
                     )}
+                    {detailTab === "normalized" && (
+                      <Stack gap={8}>
+                        <Row gap={8} align="center">
+                          <AgentTag agentId="mapping" theme={theme} />
+                          <Text size="small" tone="tertiary">
+                            Raw line items decomposed into internal chart-of-account components per GAAP normalization rules
+                          </Text>
+                        </Row>
+                        <Table
+                          headers={["Line Item", "Internal Component", "As of Jan 31, 2026", "As of Jan 31, 2025"]}
+                          rows={NORMALIZED_VALUES.map((n) => [
+                            <Text size="small" weight={n.indent === 0 ? "semibold" : undefined}>
+                              {n.indent === 0 ? n.lineItem : ""}
+                            </Text>,
+                            <Text size="small" style={{ paddingLeft: n.indent * 16, color: n.indent === 0 ? theme.text.primary : theme.text.secondary }}>
+                              {n.indent === 0 ? "—" : n.component}
+                            </Text>,
+                            <Text size="small" weight={n.indent === 0 ? "semibold" : undefined}>{n.fy2026}</Text>,
+                            <Text size="small" tone="tertiary">{n.fy2025}</Text>,
+                          ])}
+                          striped
+                        />
+                      </Stack>
+                    )}
                   </Stack>
                 </Row>
               </div>
@@ -4348,8 +4717,8 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                     appendAudit({ kind: "mapping-accept", field });
                     setSelectedField(null);
                   }}
-                  onOverride={(field) => {
-                    appendAudit({ kind: "mapping-override", field });
+                  onOverride={(field, correctedValue, note) => {
+                    appendAudit({ kind: "mapping-override", field, correctedValue, note });
                     setSelectedField(null);
                   }}
                 />
@@ -4466,6 +4835,90 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
   );
 }
 
+function ViewInFocusToggle({ theme }: { theme: FigmaTheme }) {
+  const [inFocusOpen, setInFocusOpen] = useCanvasState<boolean>("inFocusOpen", true);
+  const [menuOpen, setMenuOpen] = useCanvasState<boolean>("viewInFocusMenuOpen", false);
+
+  return (
+    <div style={{ position: "relative" }}>
+      <Button variant="ghost" style={{ height: 28, fontSize: 11 }} onClick={() => setMenuOpen(!menuOpen)}>
+        View In Focus ▾
+      </Button>
+      {menuOpen && (
+        <div
+          style={{
+            position: "absolute",
+            top: 32,
+            right: 0,
+            background: theme.bg.editor,
+            border: `1px solid ${theme.stroke.secondary}`,
+            borderRadius: 8,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+            zIndex: 50,
+            minWidth: 180,
+            padding: 4,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setInFocusOpen(true);
+              setMenuOpen(false);
+            }}
+            style={{
+              display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
+              padding: "8px 10px", background: "none", border: "none", cursor: "pointer",
+              fontSize: 12, fontFamily: "Inter, sans-serif", color: theme.text.primary, borderRadius: 6,
+            }}
+          >
+            {inFocusOpen ? "✓" : ""} Show In Focus cards
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setInFocusOpen(false);
+              setMenuOpen(false);
+            }}
+            style={{
+              display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
+              padding: "8px 10px", background: "none", border: "none", cursor: "pointer",
+              fontSize: 12, fontFamily: "Inter, sans-serif", color: theme.text.primary, borderRadius: 6,
+            }}
+          >
+            {!inFocusOpen ? "✓" : ""} Hide In Focus cards
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CaseRowExpansion({ row, theme }: { row: CaseRowData; theme: FigmaTheme }) {
+  const previewRows = MAPPING_DATA.slice(0, 4);
+  return (
+    <div style={{ padding: "12px 16px", background: theme.bg.elevated, borderTop: `1px solid ${theme.stroke.tertiary}` }}>
+      <Stack gap={8}>
+        <Row align="center" justify="space-between">
+          <Text weight="semibold" size="small">Extraction preview — {row.entity}</Text>
+          <Row gap={8} align="center">
+            <AgentTag agentId="document-intel" theme={theme} />
+            <Text size="small" tone="tertiary">{row.extractionConf}% confidence</Text>
+          </Row>
+        </Row>
+        <Table
+          headers={["Field", "Value", "Confidence"]}
+          rows={previewRows.map((r) => {
+            const cp = confidencePill(r.confidence);
+            return [r.field, r.value, <Pill tone={cp.tone}>{cp.label}</Pill>];
+          })}
+          striped
+        />
+        <Text size="small" tone="quaternary">Showing 4 of 140 fields — open case for full extraction table</Text>
+      </Stack>
+    </div>
+  );
+}
+
 function CasesListView({
   theme,
   openCase,
@@ -4473,6 +4926,8 @@ function CasesListView({
   theme: FigmaTheme;
   openCase: (id: CaseId, stage?: StageId) => void;
 }) {
+  const [expandedRow, setExpandedRow] = useCanvasState<string | null>("expandedCaseRow", null);
+
   function riskTone(r: RiskStatus): "deleted" | "warning" | "success" {
     if (r === "High Risk") return "deleted";
     if (r === "Moderate Risk") return "warning";
@@ -4524,79 +4979,90 @@ function CasesListView({
         </Row>
         <Row gap={8} align="center">
           <Text size="small" tone="tertiary">1–8 of 8</Text>
+          <ViewInFocusToggle theme={theme} />
           <AgentTag agentId="orchestrator" theme={theme} />
         </Row>
       </Row>
 
-      <Table
-        headers={[
-          "",
-          "Case (Entity)",
-          "Trigger Type",
-          "Extraction Conf.",
-          "Exposure",
-          "Net Margin %",
-          "Health Score",
-          "Risk Status",
-          "Primary Concern",
-          "Tasks",
-          "Action",
-        ]}
-        rows={CASE_ROWS.map((row) => {
+      <Stack gap={0}>
+        {CASE_ROWS.map((row) => {
           const { caseId, stage } = caseForRow(row);
-          return [
-            <input type="checkbox" style={{ cursor: "pointer" }} />,
-            <Row gap={6} align="center">
-              <span style={{ color: theme.text.quaternary, fontSize: 11 }}>›</span>
-              <Text weight="semibold" size="small">{row.entity}</Text>
-            </Row>,
-            row.triggerType,
-            <ExtractionConfBadge pct={row.extractionConf} theme={theme} />,
-            row.exposure,
-            <Text
-              size="small"
-              style={{
-                color: row.netMarginPct.startsWith("-") ? theme.diff.removedLine : theme.category.green,
-              }}
-            >
-              {row.netMarginPct}
-            </Text>,
-            <HealthScorePill score={row.healthScore} theme={theme} />,
-            <Pill tone={riskTone(row.riskStatus)}>• {row.riskStatus}</Pill>,
-            <Text size="small" tone="secondary">{row.primaryConcern}</Text>,
-            row.tasks > 0 ? (
-              <span
-                style={{
-                  background: theme.accent.primary,
-                  color: "#fff",
-                  borderRadius: "50%",
-                  width: 20,
-                  height: 20,
-                  fontSize: 11,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                {String(row.tasks).padStart(2, "0")}
-              </span>
-            ) : (
-              <Text size="small" tone="quaternary">N/A</Text>
-            ),
-            <Button
-              variant={actionTone(row.action)}
-              style={{ height: 28, fontSize: 11 }}
-              onClick={() => openCase(caseId, stage)}
-            >
-              {row.action}
-            </Button>,
-          ];
+          const isExpanded = expandedRow === row.id;
+          return (
+            <div key={row.id} style={{ border: `1px solid ${theme.stroke.secondary}`, borderRadius: isExpanded ? 8 : 0, marginBottom: isExpanded ? 8 : -1, overflow: "hidden" }}>
+              <Table
+                headers={[
+                  "",
+                  "Case (Entity)",
+                  "Trigger Type",
+                  "Extraction Conf.",
+                  "Exposure",
+                  "Net Margin %",
+                  "Health Score",
+                  "Risk Status",
+                  "Primary Concern",
+                  "Tasks",
+                  "Action",
+                ]}
+                rows={[[
+                  <input type="checkbox" style={{ cursor: "pointer" }} />,
+                  <Row gap={6} align="center" style={{ cursor: "pointer" }}>
+                    <span
+                      onClick={() => setExpandedRow(isExpanded ? null : row.id)}
+                      style={{ color: theme.text.quaternary, fontSize: 11, transform: isExpanded ? "rotate(90deg)" : "none", display: "inline-block" }}
+                    >
+                      ›
+                    </span>
+                    <Text weight="semibold" size="small">{row.entity}</Text>
+                  </Row>,
+                  row.triggerType,
+                  <ExtractionConfBadge pct={row.extractionConf} theme={theme} />,
+                  row.exposure,
+                  <Text
+                    size="small"
+                    style={{
+                      color: row.netMarginPct.startsWith("-") ? theme.diff.removedLine : theme.category.green,
+                    }}
+                  >
+                    {row.netMarginPct}
+                  </Text>,
+                  <HealthScorePill score={row.healthScore} theme={theme} />,
+                  <Pill tone={riskTone(row.riskStatus)}>• {row.riskStatus}</Pill>,
+                  <Text size="small" tone="secondary">{row.primaryConcern}</Text>,
+                  row.tasks > 0 ? (
+                    <span
+                      style={{
+                        background: theme.accent.primary,
+                        color: "#fff",
+                        borderRadius: "50%",
+                        width: 20,
+                        height: 20,
+                        fontSize: 11,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {String(row.tasks).padStart(2, "0")}
+                    </span>
+                  ) : (
+                    <Text size="small" tone="quaternary">N/A</Text>
+                  ),
+                  <Button
+                    variant={actionTone(row.action)}
+                    style={{ height: 28, fontSize: 11 }}
+                    onClick={() => openCase(caseId, stage)}
+                  >
+                    {row.action}
+                  </Button>,
+                ]]}
+                rowTone={[row.riskStatus === "High Risk" ? "danger" : row.riskStatus === "Moderate Risk" ? "warning" : undefined]}
+              />
+              {isExpanded && <CaseRowExpansion row={row} theme={theme} />}
+            </div>
+          );
         })}
-        rowTone={CASE_ROWS.map((r) =>
-          r.riskStatus === "High Risk" ? "danger" : r.riskStatus === "Moderate Risk" ? "warning" : undefined,
-        )}
-        striped
-      />
+      </Stack>
     </Stack>
   );
 }
