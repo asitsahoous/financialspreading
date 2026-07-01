@@ -4355,6 +4355,21 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                 />
               )}
               <ValidateRatiosPanel theme={theme} />
+              <Card>
+                <CardHeader trailing={<AgentTag agentId="mapping" theme={theme} />}>
+                  Gate 2 — Sign off spread
+                </CardHeader>
+                <CardBody>
+                  <Callout tone="warning" title="Human Gate 2 required">
+                    Review Agent has flagged {caseDef.openExceptions} exception(s). Resolve then sign off to release Risk Agent for ratio calculation.
+                  </Callout>
+                  <GateSignOffBar
+                    mode="gate2-sign"
+                    theme={theme}
+                    onAction={(action) => appendAudit(action)}
+                  />
+                </CardBody>
+              </Card>
             </>
           )}
 

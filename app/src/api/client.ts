@@ -150,7 +150,10 @@ export const acosApi = {
   getPortfolio: () =>
     request<PortfolioData>("/portfolio"),
 
-  /** Health check. */
-  health: () =>
-    request<{ status: string }>("/../../health"),
+  /** Health check — calls root-level /health, not /api/v1/health. */
+  health: async () => {
+    const res = await fetch(`${BASE_URL}/health`);
+    if (!res.ok) throw new Error(`Health check failed: ${res.status}`);
+    return res.json() as Promise<{ status: string }>;
+  },
 };

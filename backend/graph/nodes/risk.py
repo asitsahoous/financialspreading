@@ -24,12 +24,19 @@ PEERS = {
 
 
 def _get_val(rows: list[MappingRow], field: str) -> float | None:
+    """Parse mapped values (e.g. '$648,125M', '$98.1B', '$100K') into millions."""
     for r in rows:
         if r["field"] == field and r["value"] != "(calculated)":
             try:
-                v = r["value"].replace("$", "").replace(",", "").replace("M", "").replace("B", "000").replace("K", "0.001").strip()
+                v = r["value"].replace("$", "").replace(",", "").strip()
+                if v.upper().endswith("B"):
+                    return float(v[:-1]) * 1_000   # billions → millions
+                if v.upper().endswith("M"):
+                    return float(v[:-1])            # already in millions
+                if v.upper().endswith("K"):
+                    return float(v[:-1]) / 1_000   # thousands → millions
                 return float(v)
-            except ValueError:
+            except (ValueError, IndexError):
                 return None
     return None
 
@@ -38,20 +45,23 @@ def risk_agent(state: CreditCaseState) -> dict:
     """Calculate ratios from mapped spread. Flag covenant breaches."""
     rows: list[MappingRow] = state.get("mapping_rows", [])
 
-    # Extract key values (in millions)
+    # Extract key values (in millions) — fall back to Walmart FY2025 defaults for demo
     current_assets = _get_val(rows, "Total Current Assets") or 84874.0
-    # Total Assets flagged — use corrected value for ratio calc
-    total_assets = 284668.0  # corrected from Total Assets OCR error
-    cash = _get_val(rows, "Cash & Equivalents") or 10727.0
-    inventories = _get_val(rows, "Inventories") or 58851.0
     lt_debt = _get_val(rows, "Long-term Debt") or 35420.0
     equity = _get_val(rows, "Shareholders Equity") or 14850.0
-    revenue = _get_val(rows, "Revenue") or 648125.0
     ebit = _get_val(rows, "Operating income") or 28208.0
     cfo = _get_val(rows, "Operating cash flow") or 35672.0
     capex = _get_val(rows, "Capital expenditures") or 21600.0
-    current_liabilities = 96904.0  # from balance sheet
-    interest_expense = 2129.0  # from notes
+
+    # Current liabilities: derived from current assets and short-term borrowings + AP + accrued
+    short_term_debt = _get_val(rows, "Short-term borrowings") or 6998.0
+    ap = _get_val(rows, "Accounts payable") or 58812.0
+    accrued = _get_val(rows, "Accrued liabilities") or 31187.0
+    # If mapped directly, prefer it; otherwise sum components
+    current_liabilities = _get_val(rows, "Total Current Liabilities") or (short_term_debt + ap + accrued)
+
+    # Interest expense: read from notes/mapped value if available, else estimate from debt balance
+    interest_expense = _get_val(rows, "Interest expense") or (lt_debt * 0.06)  # ~6% avg rate fallback
 
     # Ratio calculations
     current_ratio = round(current_assets / current_liabilities, 2)
