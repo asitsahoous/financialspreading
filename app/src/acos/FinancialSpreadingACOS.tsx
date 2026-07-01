@@ -87,9 +87,15 @@ function DxpLeftNav({ theme }: { theme: FigmaTheme }) {
           }}
         />
         <Stack gap={10} style={{ width: "100%", alignItems: "center" }}>
-          {["H", "S", "Q"].map((label, i) => (
+          {[
+            { label: "⌂", title: "Home" },
+            { label: "⌕", title: "Search" },
+            { label: "☰", title: "Hub" },
+            { label: "☷", title: "Apps" },
+          ].map((item, i) => (
             <div
-              key={label}
+              key={item.label}
+              title={item.title}
               style={{
                 width: 32,
                 height: 32,
@@ -97,13 +103,14 @@ function DxpLeftNav({ theme }: { theme: FigmaTheme }) {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 11,
+                fontSize: 14,
                 color: theme.text.tertiary,
                 background: i === 2 ? theme.fill.secondary : "transparent",
                 borderLeft: i === 2 ? `2px solid ${theme.accent.primary}` : "none",
+                cursor: "pointer",
               }}
             >
-              {label}
+              {item.label}
             </div>
           ))}
         </Stack>
@@ -131,10 +138,16 @@ function DxpBreadcrumb({
   title,
   theme,
   caseContext,
+  onHubClick,
+  onTitleClick,
+  onBackToList,
 }: {
   title: string;
   theme: FigmaTheme;
   caseContext?: string;
+  onHubClick?: () => void;
+  onTitleClick?: () => void;
+  onBackToList?: () => void;
 }) {
   return (
     <Row
@@ -151,23 +164,31 @@ function DxpBreadcrumb({
       }}
     >
       <Row gap={8} align="center">
-        <Text size="small" tone="secondary" as="span">
+        {onBackToList && (
+          <span
+            onClick={onBackToList}
+            style={{ cursor: "pointer", fontSize: 14, color: theme.text.tertiary, marginRight: 4 }}
+          >
+            ←
+          </span>
+        )}
+        <span
+          onClick={onHubClick}
+          style={{ cursor: onHubClick ? "pointer" : "default", fontSize: 12, color: theme.text.secondary }}
+        >
           Hub
-        </Text>
-        <Text size="small" tone="quaternary" as="span">
-          /
-        </Text>
-        <Text size="small" tone="secondary" as="span">
+        </span>
+        <Text size="small" tone="quaternary" as="span">/</Text>
+        <span
+          onClick={onTitleClick}
+          style={{ cursor: onTitleClick ? "pointer" : "default", fontSize: 12, color: theme.text.secondary }}
+        >
           {title}
-        </Text>
+        </span>
         {caseContext && (
           <>
-            <Text size="small" tone="quaternary" as="span">
-              /
-            </Text>
-            <Text size="small" weight="semibold" as="span">
-              {caseContext}
-            </Text>
+            <Text size="small" tone="quaternary" as="span">/</Text>
+            <Text size="small" weight="semibold" as="span">{caseContext}</Text>
           </>
         )}
       </Row>
@@ -550,14 +571,25 @@ function DxpShell({
           minWidth: 0,
         }}
       >
-        <DxpBreadcrumb title="Case Explorer" theme={theme} caseContext={caseContext} />
+        <DxpBreadcrumb
+          title="Case Explorer"
+          theme={theme}
+          caseContext={caseContext}
+          onHubClick={() => setView("command")}
+          onTitleClick={() => setView("caselist")}
+          onBackToList={caseContext ? () => setView("caselist") : undefined}
+        />
         <DxpTabBar
           tabs={tabs}
           active={view}
           onChange={setView}
           theme={theme}
           trailing={
-            <Button variant="primary" style={{ height: 28, fontSize: 12, borderRadius: 4 }}>
+            <Button
+              variant="primary"
+              style={{ height: 28, fontSize: 12, borderRadius: 4 }}
+              onClick={() => setView("caselist")}
+            >
               + Case
             </Button>
           }
@@ -2059,7 +2091,7 @@ function GateSignOffBar({
   if (mode === "intake-override") {
     return (
       <Row gap={8} wrap>
-        <Button variant="primary">Send doc request reminder</Button>
+            <Button variant="primary" onClick={() => onAction({ kind: "intake-override" })}>Send doc request reminder</Button>
         <Button variant="ghost" onClick={() => onAction({ kind: "intake-override" })}>
           Override with reason (logged)
         </Button>
@@ -2223,7 +2255,8 @@ function PortfolioBorrowerTable({
 }
 
 function makeAuditEvent(caseId: CaseId, action: GateAction): AuditEvent {
-  const now = "Just now";
+  const d = new Date();
+  const now = `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
   if (action.kind === "gate2-sign") {
     return {
       id: `audit-${Date.now()}-gate2`,
@@ -2830,7 +2863,7 @@ function Sparkline({
 
 // ─── Validate Ratios panel ────────────────────────────────────────────────────
 
-function ValidateRatiosPanel({ theme }: { theme: FigmaTheme }) {
+function ValidateRatiosPanel({ theme, onMarkComplete }: { theme: FigmaTheme; onMarkComplete?: () => void }) {
   const [tab, setTab] = useCanvasState<RatioTab>("ratioTab", "summary");
   const [calculating, setCalculating] = useCanvasState<boolean>("ratioCalculating", false);
   const tabs: { id: RatioTab; label: string }[] = [
@@ -2861,7 +2894,7 @@ function ValidateRatiosPanel({ theme }: { theme: FigmaTheme }) {
         <Text weight="semibold" size="small">Validate Ratios</Text>
         <Row gap={8} align="center">
           <Button variant="ghost" style={{ height: 28, fontSize: 11 }}>Actions</Button>
-          <Button variant="primary" style={{ height: 28, fontSize: 11 }}>Mark Complete</Button>
+          <Button variant="primary" style={{ height: 28, fontSize: 11 }} onClick={onMarkComplete}>Mark Complete</Button>
         </Row>
       </Row>
       <Row gap={0} style={{ borderBottom: `1px solid ${theme.stroke.secondary}`, padding: "0 16px" }}>
@@ -3180,8 +3213,8 @@ function CreditMemoFullView({ theme, onClose }: { theme: FigmaTheme; onClose: ()
           <Row align="center" justify="space-between" style={{ padding: "16px 20px", borderBottom: `1px solid ${theme.stroke.secondary}` }}>
             <Text weight="semibold">Review & Submit Credit Memo Report</Text>
             <Row gap={8}>
-              <Button variant="ghost" style={{ height: 28, fontSize: 11 }}>Actions</Button>
-              <Button variant="secondary" style={{ height: 28, fontSize: 11 }}>Export</Button>
+              <Button variant="ghost" style={{ height: 28, fontSize: 11 }}>Actions ▾</Button>
+              <ExportDropdown theme={theme} caseRef="MEMO-REPORT" />
               <button
                 type="button"
                 onClick={onClose}
@@ -3468,8 +3501,8 @@ function PortfolioView({
               <AgentTag agentId="sentinel" theme={theme} />
               <Text size="small" tone="tertiary">DSCR 0.95x · Floor plan utilization 88%</Text>
             </Row>
-            <Button variant="ghost" onClick={() => openCase("walmart", "assessment")}>
-              View case stage → Assessment
+            <Button variant="ghost" onClick={() => openCase("northern-retail", "intake")}>
+              View case → AutoWest (demo: Northern Retail)
             </Button>
           </Stack>
         </div>
@@ -3572,7 +3605,7 @@ function CommandCenterView({
             <Text size="small" tone="secondary">
               Covenant breach: Current Ratio 0.85x (req &gt;1.2x). DSCR 0.95x.
             </Text>
-            <Button variant="primary" onClick={() => openCase("walmart", "assessment")}>
+            <Button variant="primary" onClick={() => openCase("northern-retail", "intake")}>
               Open case workspace
             </Button>
           </DxpQueueCard>
@@ -3609,12 +3642,17 @@ function CommandCenterView({
             title="Borrower 3 — Floor Plan"
             theme={theme}
             demoLabel="Synthetic portfolio queue — demo breadth"
-            trustFooter={<QueueTrustFooter gate="Gate 4 pending" reviewMin="8 min" stageLabel="Memo" theme={theme} />}
+            trustFooter={<QueueTrustFooter gate="Gate 4 pending" reviewMin="8 min" stageLabel="Memo" theme={theme}
+              onViewStage={() => openCase("walmart", "memo")}
+            />}
           >
             <AgentTag agentId="memo" theme={theme} />
             <Text size="small" tone="secondary">
               Memo Composer draft ready · Gate 4 pending your coherence review.
             </Text>
+            <Button variant="primary" onClick={() => openCase("walmart", "memo")}>
+              Review memo
+            </Button>
           </DxpQueueCard>
         </Stack>
 
@@ -4530,7 +4568,11 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
             <Row gap={8} align="center" wrap>
               <Text size="small" weight="semibold">Next best action:</Text>
               <Text size="small">{caseDef.nextBestAction}</Text>
-              <Button variant="primary" style={{ height: 28, fontSize: 12, borderRadius: 4 }}>
+              <Button
+                variant="primary"
+                style={{ height: 28, fontSize: 12, borderRadius: 4 }}
+                onClick={() => setStageId(caseDef.defaultStage)}
+              >
                 {caseDef.primaryCta}
               </Button>
             </Row>
@@ -4684,9 +4726,26 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                       </Stack>
                     )}
                     {detailTab === "corrected" && (
-                      <Text size="small" tone="tertiary">
-                        No analyst corrections yet. Overrides are logged with reason and timestamp.
-                      </Text>
+                      <Stack gap={8}>
+                        {caseAudit.filter((e) => e.input.includes("Override") || e.input.includes("corrected")).length === 0 ? (
+                          <Text size="small" tone="tertiary">
+                            No analyst corrections yet. Overrides are logged with reason and timestamp.
+                          </Text>
+                        ) : (
+                          <Table
+                            headers={["Time", "Field", "Action", "Reason"]}
+                            rows={caseAudit
+                              .filter((e) => e.input.includes("Override") || e.input.includes("corrected"))
+                              .map((e) => [
+                                e.time,
+                                e.input.replace("Override request: ", "").replace("Field override request: ", ""),
+                                <Pill tone="warning">Override</Pill>,
+                                e.reasoning,
+                              ])}
+                            striped
+                          />
+                        )}
+                      </Stack>
                     )}
                     {detailTab === "normalized" && (
                       <Stack gap={8}>
@@ -4730,7 +4789,10 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                   }}
                 />
               )}
-              <ValidateRatiosPanel theme={theme} />
+              <ValidateRatiosPanel
+                theme={theme}
+                onMarkComplete={() => appendAudit({ kind: "gate2-sign" })}
+              />
               <Card>
                 <CardHeader trailing={<AgentTag agentId="mapping" theme={theme} />}>
                   Gate 2 — Sign off spread
@@ -4816,7 +4878,34 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
             </Stack>
           )}
 
-          {!isNorthern && stageId === "decision" && <DecisionRationalePanel theme={theme} />}
+          {!isNorthern && stageId === "decision" && (
+            <Stack gap={12}>
+              <DecisionRationalePanel theme={theme} />
+              <Card>
+                <CardHeader trailing={<AgentTag agentId="decision" theme={theme} />}>
+                  Gate 5 — Credit committee decision
+                </CardHeader>
+                <CardBody>
+                  <Callout tone="info" title="Committee package ready">
+                    Decision Synthesis Agent recommends Conditional Approve (score 5.45/10). Spread, bureau
+                    verification, AML/KYC attestation, and connector evidence bundle attached. Gate 5 sign-off
+                    required to close the case.
+                  </Callout>
+                  <Row gap={8} wrap>
+                    <Button variant="primary" onClick={() => appendAudit({ kind: "gate2-sign" })}>
+                      Approve
+                    </Button>
+                    <Button variant="secondary" onClick={() => setMemoOpen(true)}>
+                      View memo report
+                    </Button>
+                    <Button variant="ghost" onClick={() => appendAudit({ kind: "mapping-override", field: "committee-decision" })}>
+                      Request revisions (logged)
+                    </Button>
+                  </Row>
+                </CardBody>
+              </Card>
+            </Stack>
+          )}
 
           {isNorthern && stageId === "decision" && (
             <div style={dxpCard(theme)}>
@@ -4900,8 +4989,9 @@ function ViewInFocusToggle({ theme }: { theme: FigmaTheme }) {
   );
 }
 
-function CaseRowExpansion({ row, theme }: { row: CaseRowData; theme: FigmaTheme }) {
+function CaseRowExpansion({ row, theme, openCase }: { row: CaseRowData; theme: FigmaTheme; openCase?: (id: CaseId, stage?: StageId) => void }) {
   const previewRows = MAPPING_DATA.slice(0, 4);
+  const targetCase: CaseId = row.id.startsWith("WMT") || row.id.startsWith("CHY") ? "walmart" : "northern-retail";
   return (
     <div style={{ padding: "12px 16px", background: theme.bg.elevated, borderTop: `1px solid ${theme.stroke.tertiary}` }}>
       <Stack gap={8}>
@@ -4920,7 +5010,14 @@ function CaseRowExpansion({ row, theme }: { row: CaseRowData; theme: FigmaTheme 
           })}
           striped
         />
-        <Text size="small" tone="quaternary">Showing 4 of 140 fields — open case for full extraction table</Text>
+        <Row align="center" justify="space-between">
+          <Text size="small" tone="quaternary">Showing 4 of 140 fields</Text>
+          {openCase && (
+            <Button variant="primary" style={{ height: 28, fontSize: 11 }} onClick={() => openCase(targetCase, "review")}>
+              Open full case →
+            </Button>
+          )}
+        </Row>
       </Stack>
     </div>
   );
@@ -4944,9 +5041,10 @@ function CasesListView({
     return a === "Negotiate" ? "primary" : "ghost";
   }
   function caseForRow(row: CaseRowData): { caseId: CaseId; stage: StageId } {
-    if (row.id.startsWith("WMT")) return { caseId: "walmart", stage: "review" };
-    if (row.id.startsWith("AWM") || row.id.startsWith("NRT")) return { caseId: "northern-retail", stage: "intake" };
-    return { caseId: "walmart", stage: "review" };
+    if (row.id.startsWith("WMT") || row.id.startsWith("CHY")) return { caseId: "walmart", stage: "review" };
+    if (row.id.startsWith("AWM") || row.id.startsWith("VNT") || row.id.startsWith("NRT")) return { caseId: "northern-retail", stage: "intake" };
+    if (row.id.startsWith("HRZ") || row.id.startsWith("MBE") || row.id.startsWith("SXT")) return { caseId: "walmart", stage: "assessment" };
+    return { caseId: "walmart", stage: "memo" };
   }
 
   return (
@@ -5067,7 +5165,7 @@ function CasesListView({
         striped
         renderRowExtra={(ri) => {
           const row = CASE_ROWS[ri];
-          return expandedRow === row.id ? <CaseRowExpansion row={row} theme={theme} /> : null;
+          return expandedRow === row.id ? <CaseRowExpansion row={row} theme={theme} openCase={openCase} /> : null;
         }}
       />
     </Stack>

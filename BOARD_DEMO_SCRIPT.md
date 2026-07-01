@@ -220,13 +220,36 @@
 
 | App tab | Key interactions | Story |
 |---------|-----------------|-------|
-| **Command Center** | Queue cards with trust footers; agent queue table; overnight callout | 1, 4 |
-| **Cases (list view)** | In Focus cards; Health Score; Extraction Confidence; Risk Status table | Appendix B |
-| **Cases (workspace) → Walmart** | Pipeline stepper; case header metadata; Trust Strip; briefing; Gate 2 | 2, 5 |
+| **Command Center** | Queue cards with trust footers; agent queue table; overnight callout; all cards drillable | 1, 4 |
+| **Cases (list view)** | In Focus cards (toggle); Health Score; Extraction Confidence; inline row expansion with extraction preview; Open full case button | Appendix B |
+| **Cases (workspace) → Walmart** | Pipeline stepper; case header metadata; Trust Strip; briefing; Gate 2; ← back nav + clickable breadcrumb | 2, 5 |
 | **Cases (workspace) → lifecycle rail** | Click any stage → Input/Reasoning/Output; Gate sign-off; runtime log | 3 |
-| **Cases → Review** | Split PDF/table pane; confidence badges; Trust Inspector; Validate Ratios | 5 |
-| **Cases → Credit Memo** | Connector Trust Panel; memo source tags; Generate Report modal | 6 |
-| **Cases → Credit Memo modal** | Risk score 5.45/10; DECISION: NEGOTIATE; collapsible sections | 6 |
-| **Cases → Northern Retail** | Gate 1 blocked; sad-path trace; override logged | 4 |
-| **Insight** | InSight Assist panel; agent KPI row; active cases table; Sentinel alerts | 7 |
+| **Cases → Intake** | Documents Uploaded table (classification, uploader, size, SOP); Gate 1 sign-off / override | 3, 4 |
+| **Cases → Review** | Split PDF/table pane; Extracted/Exceptions/Corrected/Normalized tabs; Trust Inspector with Impact + Change Log tabs + correct value input; Validate Ratios (5 tabs: Summary, Liquidity, Profitability, Solvency, Efficiency); Gate 2 | 5 |
+| **Cases → Assessment** | Risk formula panel; Gate 3 (Risk officer); ratio preview | 5 |
+| **Cases → Credit Memo** | Connector Trust Panel; memo source tags; Gate 4; Generate Report modal with Export dropdown | 6 |
+| **Cases → Credit Memo modal** | Risk score 5.45/10; DECISION: NEGOTIATE; 6 collapsible sections; Trend & Variance analysis; Export as PDF/Excel | 6 |
+| **Cases → Decision** | Decision rationale tree; Gate 5 — credit committee sign-off; View memo report button | 6 |
+| **Cases → Northern Retail** | Gate 1 blocked; 7 missing docs with classification badges; override logged; pipeline held | 4 |
+| **Insight** | InSight Assist panel (Sentinel briefing); agent KPI row; active cases table; Sentinel alerts; covenant chart | 7 |
 | **Agents** | 10 agent cards; last-24h activity strip; connector strategy | Appendix A |
+
+---
+
+## Interactive features (all functional)
+
+| Feature | Where | What it does |
+|---------|-------|-------------|
+| **Clickable breadcrumb** | All case views | Hub → Command Center; Case Explorer → Cases list; ← arrow → back to Cases list |
+| **Trust Inspector Impact tab** | Review stage → Inspect | Shows cascading effect table: which downstream metrics change when you correct the value |
+| **Trust Inspector Change Log** | Review stage → Inspect | Timeline of who extracted, mapped, and flagged each field |
+| **Trust Inspector Apply correction** | Review stage → Inspect | Corrected value + note → audit log entry with timestamp |
+| **Corrected tab** | Review stage tabs | Shows overrides after analyst corrections — not just placeholder text |
+| **Normalized tab** | Review stage tabs | GAAP component breakdown (Cash → Time Deposits, Marketable Securities, etc.) |
+| **Inline row expansion** | Cases list → click chevron | Extraction preview (4 fields) + "Open full case →" button |
+| **View In Focus toggle** | Cases list | Dropdown to show/hide the In Focus banner |
+| **Export as PDF/Excel** | Case header + Credit Memo modal | Dropdown with last-export timestamp |
+| **Gate 5 sign-off** | Decision stage | Credit committee Approve / Request revisions / View memo report |
+| **Validate Ratios (5 tabs)** | Review stage | Summary + Liquidity + Profitability + Solvency + Efficiency with sparkline trend charts and "Calculating…" loading state |
+| **Primary CTA** | Case header | Clicks route to the default stage for the case |
+| **All queue cards** | Command Center | Every card has a drillable button that opens the correct case + stage |
