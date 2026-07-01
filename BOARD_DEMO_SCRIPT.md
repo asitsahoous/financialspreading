@@ -12,8 +12,9 @@
 
 1. Run `npm run dev` in `financial-spreading-board/app/` — confirm http://localhost:5173 is open
 2. Start on **Command Center** tab (default landing)
-3. Confirm DXP shell: left nav with Iron Mountain logo placeholder, breadcrumb `Hub / Case Explorer`, tab bar, `+ Case` button
-4. Have this script open on a second monitor or printed — do not read from the screen during the demo
+3. Confirm DXP shell: left nav with Iron Mountain logo placeholder, breadcrumb `Hub / Case Explorer`, tab bar, **`Trust Layer`** button, `+ Case` button
+4. Optional dry run: click **Trust Layer** in the tab bar — slide-over explains the Trust Fabric flow (Sources → Evidence → Reasoning → Action), five gates, ten agents, and SOP linkage (use if board asks "what is the trust model?")
+5. Have this script open on a second monitor or printed — do not read from the screen during the demo
 
 **Opening line (30 sec):**
 
@@ -28,10 +29,12 @@
 | Step | Action | Talk track |
 |------|--------|------------|
 | 1 | Point to the overnight callout banner | "Since your last login, agents processed 15 cases overnight. Three need your attention — estimated 28 minutes total. That's the first thing you see, not a blank dashboard." |
+| 1b | Point to **ACOS Trust Layer** banner below callout | "This isn't a copilot beside a spreadsheet. Ten agents do cognitive work; five human gates govern release; every action traces to SOP clauses and audit events. The flow strip — Sources to Action — is the InSight Trust Fabric; gates are where humans sign in lending." |
+| 1c | *(Optional)* Click **View trust model** | "Four fabric pillars map to what you see in the demo: connectors and document manifest are Trusted Sources; uploaded 10-K and SOP § links are Trusted Evidence; per-field confidence in Trust Inspector is Trusted Reasoning; gates and the runtime log are Trusted Action. We didn't bolt on SHA-256 badges — we show the surfaces that matter for credit." |
 | 2 | Point to **Critical** column — Northern Retail LLC · Gate 1 | "Intake Agent blocked this case at Gate 1. Only 2 of 9 documents per SOP §4.2. The agent didn't guess, it didn't hallucinate — it stopped and escalated." |
 | 3 | Point to trust footer on Northern Retail card | "Agent trace · Gate 1 blocked · Est. 15 min review. Every queue card tells you which gate, which agent, and how long your review will take." |
 | 4 | Point to **Needs your review** column — Walmart Inc. | "Walmart is ready. Mapping Agent finished 138 of 140 fields in 9 minutes. Review Agent flagged one outlier. Your job is 12 minutes, not 2.5 days." |
-| 5 | Point to **Agents working** column — Costco, Target | "These are labeled 'synthetic queue — demo breadth.' In production, these are real cases running in parallel. Agents don't sleep." |
+| 5 | Point to **Agents working** column — Costco, Target | "These are labeled 'Synthetic portfolio queue — demo breadth.' In production, these are real cases running in parallel. Agents don't sleep." |
 | 6 | Point to Agent Queue table below | "Full queue: borrower, stage, last agent action, time saved, trust status. Northern Retail shows Gate 1 blocked with SOP §4.2 reference." |
 | 7 | Click **Review mapping** on Walmart card | Navigates to Cases tab → Walmart case workspace |
 
@@ -45,7 +48,7 @@
 
 | Step | Action | Talk track |
 |------|--------|------------|
-| 1 | Point to **case header bar** | "Case ID, Trigger Type, SLA, Status, Extraction Confidence 99%, Risk: Low Risk, Normalization: Balanced. You know the case state before you read a single cell." |
+| 1 | Point to **case header bar** | "Case ID, Trigger Type, SLA, Status, Extraction Confidence 78%, Risk: Low Risk, Normalization: Balanced. You know the case state before you read a single cell." |
 | 2 | Point to **pipeline stepper** — Ingestion ✓ → Extractions ✓ → Output (active 2) → Health | "Four stages of agent work — the first two are done. You're at Output, step 2 of 2. Agents authored this progress bar, not a project manager." |
 | 3 | Point to **agent briefing callout** | "Mapping Agent completed 138/140 fields in 9 min. Review Agent flagged 1 outlier. Estimated review: 12 min. Agents saved ~2.5 days vs manual spread." |
 | 4 | Point to **Case Trust Strip** | "Trust score 94%, 1 open exception, Gate 2 pending, agent time saved ~2.5 days, audit events. This strip is always visible — trust is structural, not a tooltip." |
@@ -86,9 +89,11 @@
 | 4 | Point to **Case switcher** | "Two live cases — Walmart happy path, Northern Retail sad path. Toggle between them at any time." |
 | 5 | Point to **Stage trace** — Intake: blocked | "Who acted: Orchestrator opened the case, Intake Agent ran completeness check, J. Martinez cannot sign Gate 1." |
 | 6 | Point to Input / Reasoning / Output | "2 of 9 docs received. Agent reasoning: policy blocks Gate 1 with any missing required item — no exceptions without a documented override. Output: entire pipeline held." |
-| 7 | Point to **9-row document checklist** — 7 Missing pills | "Not a generic error. Each missing document is tied to its SOP §4.2 clause. The agent knows which clause requires which document." |
-| 8 | Click **Override with reason (logged)** | "Watch the runtime log. A new human row appears — highlighted. Override is audited. But the pipeline stays blocked — Gate 1 does not pass until the documents arrive." |
-| 9 | Scroll to **runtime log** — new human row highlighted | "The override is traced. The analyst's intent is on record. The system didn't let them quietly bypass — it logged their decision." |
+| 7 | Point to **9-row document checklist** — 7 Missing pills | "Not a generic error. Each missing document is tied to its SOP §4.2 clause — click any § link to open the uploaded Credit Policy viewer." |
+| 8 | Click **↑ Upload** or **Mark received (demo)** on missing rows | "Each upload marks the next missing document received — Intake Agent re-runs completeness. Demo: mark all seven, then Gate 1 sign-off unlocks the pipeline." |
+| 9 | After 9/9 received, click **Sign Gate 1 — Approve document set** | "Gate 1 signed — extraction releases. Northern Retail continues on the Walmart spread template with a clear banner — full happy path through Gates 2–5." |
+| 10 | Click **Override with reason (logged)** (optional sad-path beat) | "Override is audited but does not pass Gate 1 — same trust model as before." |
+| 11 | Scroll to **runtime log** — new human row highlighted | "The override is traced. The analyst's intent is on record. The system didn't let them quietly bypass — it logged their decision." |
 
 **Pillar proof:** Trust gate — agent stops the pipeline, human override is audited, sad path has the same structured trace as happy path.
 
@@ -107,12 +112,13 @@
 | 5 | Point to confidence badges — High (green), Medium (amber), Low (red) | "Every cell has a tier. Review Agent flagged Total Assets at 41% confidence." |
 | 6 | Point to **Total Assets $100K** row | "FY2024 was $98.1 billion. Industry median $120 billion. This is not a rounding error — it's a decimal slip on page 43. OCR read thousands where billions was correct." |
 | 7 | Click **Inspect** on Total Assets row | Opens Trust Inspector |
-| 8 | In Trust Inspector — point to reasoning callout | "Source: 10-K page 43. SOP §7.4. Agent: Review QA. Audit ID trace-8842-wmt-assets. Reasoning: FY2024 $98.1B, industry median $120B, pattern match 41%. Trust is a layer — not a tooltip." |
+| 8 | In Trust Inspector — point to reasoning callout; click **§7.4** SOP link | "Source: 10-K page 43. Click §7.4 to open the uploaded Credit Policy — Total Assets mapping rule. Agent: Review QA. Trust is a layer — not a tooltip." |
 | 9 | Click **Accept mapping** | "Human action appended to runtime log — highlighted in blue at the bottom. Gate 2 eligibility is now traceable to this decision." |
 | 10 | Scroll down to **Validate Ratios** section | "Below the extraction table, the Risk Agent has queued the ratio analysis — waiting for Gate 2." |
 | 11 | Click **Liquidity** tab in Validate Ratios | "Current Ratio 0.82x vs threshold 0.79x — amber. Sparkline shows 2025 vs 2024 trend quarterly. Risk Agent calculated this, not a spreadsheet formula." |
 | 12 | Click **Profitability** tab | "Net Profit Margin improving YoY. ROA stable. EBIT Margin pending final audited statements." |
-| 13 | Click **Mark Complete** | "Risk Agent is released. Gate 2 signed." |
+| 13 | Click **Mark Complete** | "Ratios validated — resolve Total Assets exception, then sign Gate 2 below." |
+| 14 | Click **Sign Gate 2 — Approve spread** | "Risk Agent is released. Stage advances to Assessment." |
 
 **Pillar proof:** Agent mapping with per-cell confidence + source lineage. Human accept/override is traced. Validate Ratios shows agent-calculated formulas with trend data.
 
@@ -142,11 +148,11 @@
 
 ## Story 7 — Platform ROI close (2 min)
 
-**Tab: Insight**
+**Tab: InSight**
 
 | Step | Action | Talk track |
 |------|--------|------------|
-| 1 | Click **Insight** tab | Navigate to Portfolio view |
+| 1 | Click **InSight** tab | Navigate to Portfolio view |
 | 2 | Point to **InSight Assist panel** (right side) | "Portfolio Sentinel authored this briefing overnight. Critical Alert: Rising Credit Risk. 23 active covenant breaches, +7 since last month. AutoWest and Vantage Rental are highest priority. That's an agent writing a morning brief, not a BI chart." |
 | 3 | Point to **agent KPI row** | "Three agent-authored metrics: 94% auto-pass rate — Sentinel and Review QA. 12 open exceptions across the book — Review Agent flagged overnight. 312 agent-hours saved this month — Orchestrator rollup across 42 cases." |
 | 4 | Point to **Active cases table** | "Every borrower: stage, last agent action, agent identity, trust status. Walmart in Review, Review QA flagged outlier, 1 flag. Northern Retail in Intake, blocked, Gate 1. AutoWest in Assessment, covenant breach detected. One thread — portfolio to case." |
@@ -180,8 +186,8 @@
 
 | Step | Action | Talk track |
 |------|--------|------------|
-| 1 | Point to **In Focus** cards — 4 High Risk borrowers | "Agent-prioritized — not sorted by upload date. AutoWest, Tesla Rental, Vantage Rental all flagged with AI-authored risk blurbs." |
-| 2 | Point to table columns | "8 borrowers: Extraction Confidence %, Health Score x/10 (agent-calculated), Risk Status, Primary Concern, Tasks outstanding." |
+| 1 | Point to **In Focus** cards — 4 High Risk borrowers | "Agent-prioritized — not sorted by upload date. AutoWest, Tesla Rental, Vantage Rental, and Northern Retail all flagged with AI-authored risk blurbs." |
+| 2 | Point to table columns | "9 borrowers: Extraction Confidence %, Health Score x/10 (agent-calculated), Risk Status, Primary Concern, Tasks outstanding." |
 | 3 | Point to color-coded Health Scores | "7.2/10 green for Walmart. 1.9/10 red for Vantage Rental. Agent-calculated, not analyst-entered." |
 | 4 | Point to Extraction Confidence badges | "78% for Walmart — one outlier. 65% for Vantage Rental — needs more review. Confidence is per-case, surfaced at the list level." |
 
@@ -210,7 +216,7 @@
 | vs Moody's Spreading & Scoring | "Moody's has audit logs — we have lifecycle rails. Click a stage, see the named agent, see the structured reasoning, see the gate. That's governance you can demonstrate, not document." |
 | vs Evalueserve Spreadsmart | "They claim 95% accuracy. We show which 5% needs you, why it was flagged, from which page, by which agent, under which SOP clause. Accuracy is table stakes; lineage is the differentiator." |
 | vs generic AI copilots | "Copilots chat. ACOS orchestrates — ten named agents, five human gates, one portfolio-to-case thread, connector bundle with masked entity IDs. The agent is in the workflow, not beside it." |
-| How does it scale? | "The Cases list shows 8 borrowers with agent-calculated health scores and extraction confidence. Command Center shows parallel agent work across cases simultaneously. The orchestrator routes; analysts govern." |
+| How does it scale? | "The Cases list shows 9 borrowers with agent-calculated health scores and extraction confidence. Command Center shows parallel agent work across cases simultaneously. The orchestrator routes; analysts govern." |
 | What about hallucination? | "Every memo paragraph cites its API source with a connector ID and timestamp. The Trust Inspector shows the exact OCR page and SOP clause. Humans sign off at five gates before the decision is reached." |
 | What's the integration story? | "Connector Sync Agent: Experian and Equifax via EIN, D&B via DUNS, AML/KYC via EIN and SSN/ITIN for beneficial owners, Bloomberg for peer data. SOP rules are configurable — upload the institution's credit policy, the agents apply it." |
 
@@ -220,7 +226,8 @@
 
 | App tab | Key interactions | Story |
 |---------|-----------------|-------|
-| **Command Center** | Queue cards with trust footers; agent queue table; overnight callout; all cards drillable | 1, 4 |
+| **Command Center** | Trust Layer banner; queue cards with trust footers; agent queue table; overnight callout; all cards drillable | 1, 4 |
+| **Trust Layer (shell)** | Tab bar **Trust Layer** button → slide-over: pillars, G1–G5 ladder, 10 agents, Walmart/Northern anchors | 1, Q&A |
 | **Cases (list view)** | In Focus cards (toggle); Health Score; Extraction Confidence; inline row expansion with extraction preview; Open full case button | Appendix B |
 | **Cases (workspace) → Walmart** | Pipeline stepper; case header metadata; Trust Strip; briefing; Gate 2; ← back nav + clickable breadcrumb | 2, 5 |
 | **Cases (workspace) → lifecycle rail** | Click any stage → Input/Reasoning/Output; Gate sign-off; runtime log | 3 |
@@ -231,7 +238,7 @@
 | **Cases → Credit Memo modal** | Risk score 5.45/10; DECISION: NEGOTIATE; 6 collapsible sections; Trend & Variance analysis; Export as PDF/Excel | 6 |
 | **Cases → Decision** | Decision rationale tree; Gate 5 — credit committee sign-off; View memo report button | 6 |
 | **Cases → Northern Retail** | Gate 1 blocked; 7 missing docs with classification badges; override logged; pipeline held | 4 |
-| **Insight** | InSight Assist panel (Sentinel briefing); agent KPI row; active cases table; Sentinel alerts; covenant chart | 7 |
+| **InSight** | InSight Assist panel (Sentinel briefing); agent KPI row; active cases table; In Focus banner; Sentinel alerts; covenant chart | 7 |
 | **Agents** | 10 agent cards; last-24h activity strip; connector strategy | Appendix A |
 
 ---
@@ -252,4 +259,6 @@
 | **Gate 5 sign-off** | Decision stage | Credit committee Approve / Request revisions / View memo report |
 | **Validate Ratios (5 tabs)** | Review stage | Summary + Liquidity + Profitability + Solvency + Efficiency with sparkline trend charts and "Calculating…" loading state |
 | **Primary CTA** | Case header | Clicks route to the default stage for the case |
+| **Launch Spread ↗** | Review stage | Opens full credit memo report modal |
 | **All queue cards** | Command Center | Every card has a drillable button that opens the correct case + stage |
+| **Trust Layer panel** | Tab bar (all views) | Read-only model: five gates, ten agents, policy anchors, competitor differentiation |
