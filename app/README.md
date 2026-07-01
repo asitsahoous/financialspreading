@@ -24,9 +24,26 @@ npm run preview  # serve dist locally
 | Pillar | Implementation |
 |--------|----------------|
 | **Agents as first-class actors** | 10 named agents, Command Center queues, lifecycle stage traces, agent KPIs on Insight |
-| **Trust everywhere** | Trust strip, Trust Inspector, connector panel, gate sign-off → runtime audit log |
+| **Trust everywhere** | Trust Layer banner + fabric flow strip, shell panel (fabric pillars + G1–G5 ladder), Trust strip, Trust Inspector (Intelligence Layer), connector panel (Trusted Sources), gate sign-off → runtime audit log |
 | **End-to-end case lifecycle** | 7 stages with Input / Reasoning / Output per stage |
-| **Happy + sad paths** | Walmart (Gate 2 review) vs Northern Retail (Gate 1 blocked) |
+| **Happy + sad paths** | Walmart (Gate 2 review) vs Northern Retail (Gate 1 blocked → resolve → full path) |
+| **SOP policy viewer** | Click any § citation or **Credit Policy** in tab bar to open uploaded institution policy |
+
+## User journeys (Playwright)
+
+| ID | Entry | Asserts |
+|----|-------|---------|
+| J1–J7 | Command Center / Cases | Walmart happy path, Northern sad path, lifecycle, Gate 5 |
+| J8 | Northern Retail intake | Upload/mark docs → Gate 1 → Gates 2–5 |
+| J9 | SOP link in intake | §4.2.3 opens policy viewer |
+| J10 | AutoWest Resolve | Portfolio drill-down banner |
+| J11 | All 9 CASE_ROWS | Each row opens expected workspace |
+| J12 | InSight + Agents | Tab smoke; In Focus banner on InSight |
+| J13 | Northern Retail → Credit Memo | Connector sad path when Gate 1 blocked |
+
+```bash
+npm run test:e2e   # requires build + Playwright (see package.json)
+```
 
 ## Application structure
 
@@ -36,6 +53,7 @@ app/
 │   ├── App.tsx                    # Shell banner + main export
 │   ├── acos/
 │   │   ├── FinancialSpreadingACOS.tsx   # Full ACOS UI (ported from Canvas)
+│   │   ├── sopPolicy.tsx          # Credit Policy SOP fixture + viewer components
 │   │   ├── ui.tsx                 # UI primitives (Canvas API shim)
 │   │   ├── theme.ts               # Figma BMO light tokens
 │   │   └── state.ts               # Session-persisted demo state
@@ -56,7 +74,8 @@ app/
 
 - **Trust Inspector** → Accept / Override → appends to runtime log (highlighted)  
 - **Assessment** → Sign Gate 2  
-- **Northern Retail Intake** → Override with reason (audited; pipeline stays blocked)  
+- **Northern Retail Intake** → Upload / Mark received → Gate 1 sign → pipeline unlocks (Walmart spread template)  
+- **Credit Policy** tab bar button or § links → SOP viewer slide-over  
 - Queue cards / portfolio alerts → drill into case stages  
 
 State persists in `sessionStorage` for the browser session.
@@ -92,6 +111,7 @@ See [`../BOARD_DEMO_SCRIPT.md`](../BOARD_DEMO_SCRIPT.md) for the 15-minute board
 
 - **No backend** — all case data, traces, and connectors are inline fixtures  
 - **Gate model** — Gates 1–5 block downstream agents; human actions append audit events only  
+- **Trust Fabric** — InSight platform framing (Sources → Evidence → Reasoning → Action) aligned to lending demo surfaces; gates remain the primary governance model  
 - **Connector strategy** — Experian / Equifax / D&B on EIN; AML/KYC on EIN + UBO SSN; Bloomberg peers  
 - **Next steps for production** — API layer for cases, real connector orchestration, auth (Netlify Identity), Postgres for audit immutability  
 
