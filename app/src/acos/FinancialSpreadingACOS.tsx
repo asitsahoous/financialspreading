@@ -9,7 +9,6 @@ import {
   Grid,
   H2,
   H3,
-  PieChart,
   Pill,
   Row,
   Spacer,
@@ -554,9 +553,11 @@ function DxpShell({
   theme: FigmaTheme;
   caseContext?: string;
 }) {
+  const [assistOpen, setAssistOpen] = useCanvasState<boolean>("insightAssistOpen", true);
+  const [, setCreateCaseOpen] = useCanvasState<boolean>("createCaseOpen", false);
   const tabs: { id: View; label: string }[] = [
     { id: "command", label: "Command Center" },
-    { id: "portfolio", label: "Insight" },
+    { id: "portfolio", label: "InSight" },
     { id: "caselist", label: "Cases" },
     { id: "agents", label: "Agents" },
   ];
@@ -585,13 +586,38 @@ function DxpShell({
           onChange={setView}
           theme={theme}
           trailing={
-            <Button
-              variant="primary"
-              style={{ height: 28, fontSize: 12, borderRadius: 4 }}
-              onClick={() => setView("caselist")}
-            >
-              + Case
-            </Button>
+            <Row gap={8} align="center">
+              <Button
+                variant="primary"
+                style={{ height: 28, fontSize: 12, borderRadius: 4 }}
+                onClick={() => {
+                  setCreateCaseOpen(true);
+                  setView("caselist");
+                }}
+              >
+                + Case
+              </Button>
+              <span style={{ width: 1, height: 20, background: theme.stroke.secondary }} />
+              <button
+                type="button"
+                title={assistOpen ? "Hide InSight Assist" : "Show InSight Assist"}
+                onClick={() => setAssistOpen(!assistOpen)}
+                style={{
+                  width: 24,
+                  height: 24,
+                  border: "none",
+                  background: "transparent",
+                  cursor: "pointer",
+                  fontSize: 16,
+                  color: theme.text.tertiary,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {assistOpen ? "◧" : "▷"}
+              </button>
+            </Row>
           }
         />
         <div
@@ -1597,6 +1623,7 @@ type RiskStatus = "Low Risk" | "Moderate Risk" | "High Risk";
 type CaseRowData = {
   id: string;
   entity: string;
+  stageBadge: string;
   triggerType: string;
   extractionConf: number;
   exposure: string;
@@ -1613,6 +1640,7 @@ const CASE_ROWS: CaseRowData[] = [
   {
     id: "WMT-001",
     entity: "Walmart Inc.",
+    stageBadge: "Spreading",
     triggerType: "New Loan",
     extractionConf: 78,
     exposure: "$2.0B",
@@ -1628,6 +1656,7 @@ const CASE_ROWS: CaseRowData[] = [
   {
     id: "AWM-002",
     entity: "AutoWest Motors",
+    stageBadge: "Covenant Breach",
     triggerType: "Covenant Breach",
     extractionConf: 68,
     exposure: "$12.4M",
@@ -1643,6 +1672,7 @@ const CASE_ROWS: CaseRowData[] = [
   {
     id: "TRC-003",
     entity: "Tesla Rental Corp",
+    stageBadge: "Liquidity Review",
     triggerType: "Monthly Review",
     extractionConf: 76,
     exposure: "$32.0M",
@@ -1658,6 +1688,7 @@ const CASE_ROWS: CaseRowData[] = [
   {
     id: "VNT-004",
     entity: "Vantage Rental",
+    stageBadge: "Variance Review",
     triggerType: "Cov. Breach",
     extractionConf: 65,
     exposure: "$2.8M",
@@ -1673,6 +1704,7 @@ const CASE_ROWS: CaseRowData[] = [
   {
     id: "HRZ-005",
     entity: "Hertz Global",
+    stageBadge: "Annual Review",
     triggerType: "Annual Review",
     extractionConf: 91,
     exposure: "$420.0M",
@@ -1687,6 +1719,7 @@ const CASE_ROWS: CaseRowData[] = [
   {
     id: "MBE-006",
     entity: "Mercedes Benz",
+    stageBadge: "Monthly Review",
     triggerType: "Monthly Review",
     extractionConf: 92,
     exposure: "$8.2M",
@@ -1701,6 +1734,7 @@ const CASE_ROWS: CaseRowData[] = [
   {
     id: "SXT-007",
     entity: "Sixt SE (US Ops)",
+    stageBadge: "Fleet Assessment",
     triggerType: "Annual Review",
     extractionConf: 88,
     exposure: "$115.0M",
@@ -1715,6 +1749,7 @@ const CASE_ROWS: CaseRowData[] = [
   {
     id: "CHY-008",
     entity: "Coastal Hyundai",
+    stageBadge: "New Loan Intake",
     triggerType: "New Loan",
     extractionConf: 95,
     exposure: "$15.5M",
@@ -2341,32 +2376,16 @@ function makeAuditEvent(caseId: CaseId, action: GateAction): AuditEvent {
 
 // ─── InSight Assist panel ──────────────────────────────────────────────────
 
-function InSightAssistPanel({ theme }: { theme: FigmaTheme }) {
+function InSightAssistPanel({ theme, scope = "portfolio" }: { theme: FigmaTheme; scope?: "portfolio" | "cases" }) {
   const [open, setOpen] = useCanvasState<boolean>("insightAssistOpen", true);
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        style={{
-          position: "fixed",
-          right: 24,
-          top: 80,
-          background: theme.accent.primary,
-          color: "#fff",
-          border: "none",
-          borderRadius: 8,
-          padding: "8px 14px",
-          fontSize: 12,
-          fontWeight: 600,
-          cursor: "pointer",
-          zIndex: 100,
-        }}
-      >
-        InSight Assist ▸
-      </button>
-    );
-  }
+  const casesSummary =
+    "As of 09 Apr 2026: 8 active cases in queue. 3 flagged High Risk (AutoWest, Tesla Rental, Vantage). " +
+    "Extraction complete on 6/8; 2 awaiting document intake. Orchestrator recommends prioritizing covenant breaches.";
+  const portfolioSummary =
+    "The portfolio is showing signs of stress with 23 active covenant breaches, a +7 increase since last month. " +
+    "AutoWest Motors and Vantage Rental are currently the highest priority, both failing multiple covenants " +
+    "(Current Ratio < 1.2x and DSCR < 1.5x) with Risk Scores of 9.";
+  if (!open) return null;
   return (
     <div
       style={{
@@ -2379,6 +2398,8 @@ function InSightAssistPanel({ theme }: { theme: FigmaTheme }) {
         flexDirection: "column",
         flexShrink: 0,
         height: "fit-content",
+        maxHeight: 720,
+        overflow: "auto",
       }}
     >
       <div
@@ -2393,6 +2414,7 @@ function InSightAssistPanel({ theme }: { theme: FigmaTheme }) {
         <Row gap={8} align="center">
           <span style={{ fontSize: 14, color: theme.accent.primary }}>✦</span>
           <Text weight="semibold" size="small">InSight Assist</Text>
+          <Text size="small" tone="quaternary">›</Text>
         </Row>
         <button
           type="button"
@@ -2403,66 +2425,88 @@ function InSightAssistPanel({ theme }: { theme: FigmaTheme }) {
         </button>
       </div>
       <Stack gap={12} style={{ padding: 16 }}>
-        <Text size="small" tone="tertiary">Today's Summary · Portfolio Level &rsaquo;</Text>
-        <Text weight="semibold">Hello, your Portfolio Summary is ready for review.</Text>
+        <Text size="small" tone="tertiary">
+          {scope === "cases" ? "Today's Summary — Case Queue" : "Today's Summary — Portfolio Level"} ›
+        </Text>
+        <Text weight="semibold">
+          Hello John, your {scope === "cases" ? "Case Queue Summary" : "Portfolio Summary"} is ready for review.
+        </Text>
         <div style={{ padding: "10px 12px", borderLeft: `3px solid ${theme.diff.removedLine}`, background: "#fff5f5", borderRadius: "0 6px 6px 0", fontSize: 12 }}>
           <Text weight="semibold" size="small">Critical Alert: Rising Credit Risk</Text>
         </div>
         <Text size="small" tone="secondary">
-          The portfolio is showing signs of stress with 23 active covenant breaches, a +7 increase since last month.
-          AutoWest Motors and Vantage Rental are currently the highest priority, both failing multiple covenants
-          (Current Ratio &lt; 1.2x and DSCR &lt; 1.5x) with Risk Scores of 9.
+          {scope === "cases" ? casesSummary : portfolioSummary}
         </Text>
-        <Text weight="semibold" size="small">Key Observations:</Text>
-        <Stack gap={8}>
-          {[
-            { label: "Liquidity Strain", body: "The \"Current Ratio < 1.2x\" is your most frequent breach (9 occurrences), suggesting a tightening of short-term liquidity across the dealer network." },
-            { label: "Utilization Warning", body: "Average Credit Utilization has climbed to 70% (+4% MoM). High utilization paired with the 8 overdue financial submissions suggests potential cash flow struggles in 10% of your active dealers." },
-            { label: "Portfolio Health", body: "60% of your portfolio remains Low Risk, but the 9% High Risk segment ($40.5M equivalent) is concentrated in dealers with high D/E ratios." },
-          ].map((item) => (
-            <div key={item.label} style={{ fontSize: 12, lineHeight: 1.5 }}>
-              <span style={{ fontWeight: 600 }}>{item.label}:</span>{" "}
-              <span style={{ color: theme.text.tertiary }}>{item.body}</span>
-            </div>
-          ))}
-        </Stack>
+        {scope === "portfolio" && (
+          <>
+            <Text weight="semibold" size="small">Key Observations:</Text>
+            <Stack gap={8}>
+              {[
+                { label: "Liquidity Strain", body: "The \"Current Ratio < 1.2x\" is your most frequent breach (9 occurrences), suggesting a tightening of short-term liquidity across the dealer network." },
+                { label: "Utilization Warning", body: "Average Credit Utilization has climbed to 70% (+4% MoM). High utilization paired with the 8 overdue financial submissions suggests potential cash flow struggles in 10% of your active dealers." },
+                { label: "Portfolio Health", body: "60% of your portfolio remains Low Risk, but the 9% High Risk segment ($40.5M equivalent) is concentrated in dealers with high D/E ratios." },
+              ].map((item) => (
+                <div key={item.label} style={{ fontSize: 12, lineHeight: 1.5 }}>
+                  <span style={{ fontWeight: 600 }}>{item.label}:</span>{" "}
+                  <span style={{ color: theme.text.tertiary }}>{item.body}</span>
+                </div>
+              ))}
+            </Stack>
+          </>
+        )}
+        {scope === "cases" && (
+          <Row align="center" justify="space-between" style={{ padding: "8px 12px", border: `1px solid ${theme.stroke.tertiary}`, borderRadius: 6, fontSize: 12 }}>
+            <Row gap={4} align="center">
+              <span style={{ color: theme.accent.primary }}>›</span>
+              <Text size="small">Extraction Summary</Text>
+            </Row>
+            <Text size="small" tone="tertiary">234 / 467</Text>
+          </Row>
+        )}
         <Divider />
         <Row align="center" style={{ padding: "8px 0" }}>
-          <div
+          <input
+            type="text"
+            placeholder="Type your message here"
             style={{
               flex: 1,
               border: `1px solid ${theme.stroke.secondary}`,
               borderRadius: 6,
               padding: "6px 10px",
               fontSize: 12,
-              color: theme.text.quaternary,
+              color: theme.text.primary,
               background: theme.bg.elevated,
+              fontFamily: "Inter, sans-serif",
             }}
-          >
-            Type your message here
-          </div>
-          <div
+          />
+          <button
+            type="button"
             style={{
               width: 28,
               height: 28,
               borderRadius: 6,
               background: theme.accent.primary,
+              border: "none",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               marginLeft: 8,
               cursor: "pointer",
               flexShrink: 0,
+              color: "#fff",
+              fontSize: 14,
             }}
           >
-            <span style={{ color: "#fff", fontSize: 14 }}>↑</span>
-          </div>
+            ↑
+          </button>
         </Row>
         <Row gap={8} align="center" justify="space-between">
           <Text size="small" tone="quaternary">+ Attachment</Text>
           <Row gap={4} align="center">
-            <span style={{ fontSize: 11, color: theme.text.quaternary }}>Agent: Portfolio Sentinel</span>
-            <AgentTag agentId="sentinel" theme={theme} />
+            <span style={{ fontSize: 11, color: theme.text.quaternary }}>
+              Agent: {scope === "cases" ? "Case Orchestrator" : "Portfolio Sentinel"}
+            </span>
+            <AgentTag agentId={scope === "cases" ? "orchestrator" : "sentinel"} theme={theme} />
           </Row>
         </Row>
       </Stack>
@@ -2538,7 +2582,7 @@ function InFocusBanner({
                   </Row>
                   <Text size="small" tone="quaternary">04/08 · 3:50PM CST</Text>
                   <Row gap={6} align="center">
-                    <Pill tone="neutral">{row.primaryConcern}</Pill>
+                    <Pill tone="neutral">{row.stageBadge}</Pill>
                     <Pill tone={riskTone(row.riskStatus)}>• {row.riskStatus}</Pill>
                   </Row>
                   <div
@@ -3525,27 +3569,7 @@ function PortfolioView({
       </Callout>
 
       <H2>Portfolio risk distribution</H2>
-      <Row gap={8} align="center">
-        <AgentTag agentId="sentinel" theme={theme} />
-        <Text size="small" tone="tertiary">
-          Risk tiers scored by Portfolio Sentinel Agent · nightly batch
-        </Text>
-      </Row>
-      <Row gap={24} align="start">
-        <PieChart
-          data={[
-            { label: "Low", value: 150 },
-            { label: "Medium", value: 77 },
-            { label: "High", value: 23 },
-          ]}
-          size={180}
-        />
-        <Stack gap={4} style={{ flex: 1 }}>
-          <Text size="small" tone="secondary">
-            Nearly 1 in 10 borrowers are High Risk, mirroring +7 covenant breaches this month.
-          </Text>
-        </Stack>
-      </Row>
+      <PortfolioRiskDistribution theme={theme} />
       </Stack>
       <InSightAssistPanel theme={theme} />
     </Row>
@@ -4466,6 +4490,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
   const [detailTab, setDetailTab] = useCanvasState<CaseDetailTab>("caseDetailTab", "extracted");
   const [auditAppend, setAuditAppend] = useCanvasState<AuditEvent[]>("auditAppend", []);
   const [memoOpen, setMemoOpen] = useCanvasState<boolean>("memoFullOpen", false);
+  const [lastCreatedLabel] = useCanvasState<string>("lastCreatedCaseLabel", "");
 
   const caseDef = CASES[caseId];
   const caseAudit = auditAppend.filter((e) => e.caseId === caseId);
@@ -4504,6 +4529,11 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
   return (
     <Stack gap={12}>
       {memoOpen && <CreditMemoFullView theme={theme} onClose={() => setMemoOpen(false)} />}
+      {lastCreatedLabel && (
+        <Callout tone="success" title={`Case created: ${lastCreatedLabel}`}>
+          Intake Agent queued document validation for {lastCreatedLabel}. Demo opens the nearest matching workspace template.
+        </Callout>
+      )}
       <CaseSwitcher activeId={caseId} onChange={switchCase} theme={theme} />
 
       <div style={{ ...dxpCard(theme), padding: 0, overflow: "hidden" }}>
@@ -4931,6 +4961,366 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
   );
 }
 
+// ─── Portfolio risk distribution (Figma: period selector + legend) ─────────────
+
+type RiskPeriod = "Yearly" | "Quarterly" | "Monthly";
+
+const RISK_DISTRIBUTION: Record<RiskPeriod, { label: string; value: number; pct: string; color: string }[]> = {
+  Yearly: [
+    { label: "Low Risk", value: 150, pct: "60%", color: "#1F8A65" },
+    { label: "Medium Risk", value: 77, pct: "30.2%", color: "#C08532" },
+    { label: "High Risk", value: 23, pct: "9%", color: "#B42018" },
+  ],
+  Quarterly: [
+    { label: "Low Risk", value: 142, pct: "57%", color: "#1F8A65" },
+    { label: "Medium Risk", value: 82, pct: "33%", color: "#C08532" },
+    { label: "High Risk", value: 26, pct: "10%", color: "#B42018" },
+  ],
+  Monthly: [
+    { label: "Low Risk", value: 138, pct: "55%", color: "#1F8A65" },
+    { label: "Medium Risk", value: 86, pct: "34%", color: "#C08532" },
+    { label: "High Risk", value: 28, pct: "11%", color: "#B42018" },
+  ],
+};
+
+function PortfolioRiskDistribution({ theme }: { theme: FigmaTheme }) {
+  const [period, setPeriod] = useCanvasState<RiskPeriod>("riskDistPeriod", "Yearly");
+  const [menuOpen, setMenuOpen] = useCanvasState<boolean>("riskPeriodMenuOpen", false);
+  const data = RISK_DISTRIBUTION[period];
+  const total = data.reduce((a, d) => a + d.value, 0) || 1;
+  let acc = 0;
+  const gradient = data
+    .map((d) => {
+      const start = (acc / total) * 100;
+      acc += d.value;
+      return `${d.color} ${start}% ${(acc / total) * 100}%`;
+    })
+    .join(", ");
+
+  return (
+    <div style={{ ...dxpCard(theme), padding: 16 }}>
+      <Stack gap={12}>
+        <Row align="center" justify="space-between">
+          <Row gap={8} align="center">
+            <AgentTag agentId="sentinel" theme={theme} />
+            <Text size="small" tone="tertiary">Risk tiers · Portfolio Sentinel · nightly batch</Text>
+          </Row>
+          <div style={{ position: "relative" }}>
+            <Button variant="ghost" style={{ height: 28, fontSize: 11 }} onClick={() => setMenuOpen(!menuOpen)}>
+              {period} ▾
+            </Button>
+            {menuOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 32,
+                  right: 0,
+                  background: theme.bg.editor,
+                  border: `1px solid ${theme.stroke.secondary}`,
+                  borderRadius: 8,
+                  boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+                  zIndex: 50,
+                  minWidth: 120,
+                  overflow: "hidden",
+                }}
+              >
+                {(["Yearly", "Quarterly", "Monthly"] as RiskPeriod[]).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => {
+                      setPeriod(p);
+                      setMenuOpen(false);
+                    }}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "8px 12px",
+                      background: p === period ? theme.fill.secondary : "none",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: 12,
+                      fontFamily: "Inter, sans-serif",
+                      color: theme.text.primary,
+                    }}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </Row>
+        <Row gap={24} align="start">
+          <div
+            style={{
+              width: 180,
+              height: 180,
+              borderRadius: "50%",
+              background: `conic-gradient(${gradient})`,
+              flexShrink: 0,
+            }}
+          />
+          <Stack gap={10} style={{ flex: 1, paddingTop: 8 }}>
+            {data.map((d) => (
+              <div key={d.label}>
+                <Row gap={8} align="center">
+                  <span style={{ width: 12, height: 12, borderRadius: "50%", background: d.color, flexShrink: 0 }} />
+                  <Text size="small" weight="semibold">{d.label}</Text>
+                </Row>
+                <Text size="small" tone="tertiary" style={{ marginLeft: 20 }}>
+                  {d.value} ({d.pct})
+                </Text>
+              </div>
+            ))}
+            <Text size="small" tone="secondary">
+              Nearly 1 in 10 borrowers are High Risk, mirroring +7 covenant breaches this month.
+            </Text>
+          </Stack>
+        </Row>
+      </Stack>
+    </div>
+  );
+}
+
+// ─── Cases list toolbar helpers (Figma Flow 1) ────────────────────────────────
+
+function ToolbarIconButton({
+  icon,
+  title,
+  onClick,
+  theme,
+  active,
+}: {
+  icon: string;
+  title: string;
+  onClick: () => void;
+  theme: FigmaTheme;
+  active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      style={{
+        width: 32,
+        height: 32,
+        border: `1px solid ${active ? theme.accent.primary : theme.stroke.secondary}`,
+        borderRadius: 4,
+        background: active ? theme.fill.secondary : theme.bg.editor,
+        cursor: "pointer",
+        fontSize: 14,
+        color: theme.text.secondary,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {icon}
+    </button>
+  );
+}
+
+function RowActionMenu({
+  row,
+  theme,
+  openCase,
+  caseId,
+  stage,
+}: {
+  row: CaseRowData;
+  theme: FigmaTheme;
+  openCase: (id: CaseId, stage?: StageId) => void;
+  caseId: CaseId;
+  stage: StageId;
+}) {
+  const [open, setOpen] = useCanvasState<boolean>(`rowMenu-${row.id}`, false);
+  const [toast, setToast] = useCanvasState<string>(`rowToast-${row.id}`, "");
+
+  const run = (label: string, fn: () => void) => {
+    fn();
+    setToast(label);
+    setOpen(false);
+    window.setTimeout(() => setToast(""), 2000);
+  };
+
+  return (
+    <div style={{ position: "relative" }}>
+      <ToolbarIconButton
+        icon="⋮"
+        title="Row actions"
+        theme={theme}
+        onClick={() => setOpen(!open)}
+      />
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: 36,
+            right: 0,
+            background: theme.bg.editor,
+            border: `1px solid ${theme.stroke.secondary}`,
+            borderRadius: 8,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+            zIndex: 60,
+            minWidth: 160,
+            overflow: "hidden",
+          }}
+        >
+          {[
+            { label: "Open case", fn: () => openCase(caseId, stage) },
+            { label: "Export row", fn: () => undefined },
+            { label: "Add tag", fn: () => undefined },
+            { label: "Archive", fn: () => undefined },
+          ].map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              onClick={() => run(item.label, item.fn)}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                padding: "8px 12px",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontSize: 12,
+                fontFamily: "Inter, sans-serif",
+                color: theme.text.primary,
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {toast && (
+        <Text size="small" tone="quaternary" style={{ position: "absolute", top: 36, right: 36, whiteSpace: "nowrap" }}>
+          {toast}
+        </Text>
+      )}
+    </div>
+  );
+}
+
+function CreateCaseDialog({
+  theme,
+  onClose,
+  openCase,
+}: {
+  theme: FigmaTheme;
+  onClose: () => void;
+  openCase: (id: CaseId, stage?: StageId) => void;
+}) {
+  const [entity, setEntity] = useCanvasState<string>("newCaseEntity", "");
+  const [trigger, setTrigger] = useCanvasState<string>("newCaseTrigger", "New Loan");
+  const [, setLastCreatedLabel] = useCanvasState<string>("lastCreatedCaseLabel", "");
+
+  const targetStage: StageId =
+    trigger === "Covenant Breach"
+      ? "assessment"
+      : trigger === "Monthly Review" || trigger === "Annual Review"
+        ? "review"
+        : "intake";
+  const submitLabel =
+    targetStage === "assessment"
+      ? "Create & open assessment"
+      : targetStage === "review"
+        ? "Create & open review"
+        : "Create & open intake";
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.35)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 200,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{ ...dxpCard(theme), width: 420, padding: 20 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Stack gap={12}>
+          <Row align="center" justify="space-between">
+            <Text weight="semibold">Create new case</Text>
+            <button type="button" onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18 }}>×</button>
+          </Row>
+          <AgentTag agentId="intake" theme={theme} />
+          <Text size="small" tone="secondary">
+            Intake Agent will validate the document set against SOP §4.2 once submitted.
+          </Text>
+          <label style={{ fontSize: 12 }}>
+            Borrower / Entity
+            <input
+              value={entity}
+              onChange={(e) => setEntity(e.target.value)}
+              placeholder="e.g. Acme Corp"
+              style={{
+                display: "block",
+                width: "100%",
+                marginTop: 4,
+                padding: "8px 10px",
+                border: `1px solid ${theme.stroke.secondary}`,
+                borderRadius: 6,
+                fontSize: 12,
+                fontFamily: "Inter, sans-serif",
+              }}
+            />
+          </label>
+          <label style={{ fontSize: 12 }}>
+            Trigger type
+            <select
+              value={trigger}
+              onChange={(e) => setTrigger(e.target.value)}
+              style={{
+                display: "block",
+                width: "100%",
+                marginTop: 4,
+                padding: "8px 10px",
+                border: `1px solid ${theme.stroke.secondary}`,
+                borderRadius: 6,
+                fontSize: 12,
+                fontFamily: "Inter, sans-serif",
+              }}
+            >
+              {["New Loan", "Covenant Breach", "Monthly Review", "Annual Review"].map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </label>
+          <Row gap={8} justify="end">
+            <Button variant="ghost" style={{ height: 32, fontSize: 12 }} onClick={onClose}>Cancel</Button>
+            <Button
+              variant="primary"
+              style={{ height: 32, fontSize: 12 }}
+              disabled={!entity.trim()}
+              onClick={() => {
+                const label = entity.trim() || "New borrower";
+                setLastCreatedLabel(label);
+                setEntity("");
+                onClose();
+                const target: CaseId = label.toLowerCase().includes("walmart") ? "walmart" : "northern-retail";
+                openCase(target, targetStage);
+              }}
+            >
+              {submitLabel}
+            </Button>
+          </Row>
+        </Stack>
+      </div>
+    </div>
+  );
+}
+
 function ViewInFocusToggle({ theme }: { theme: FigmaTheme }) {
   const [inFocusOpen, setInFocusOpen] = useCanvasState<boolean>("inFocusOpen", true);
   const [menuOpen, setMenuOpen] = useCanvasState<boolean>("viewInFocusMenuOpen", false);
@@ -5031,6 +5421,13 @@ function CasesListView({
   openCase: (id: CaseId, stage?: StageId) => void;
 }) {
   const [expandedRow, setExpandedRow] = useCanvasState<string | null>("expandedCaseRow", null);
+  const [search, setSearch] = useCanvasState<string>("casesSearch", "");
+  const [riskFilter, setRiskFilter] = useCanvasState<RiskStatus | "all">("casesRiskFilter", "all");
+  const [filterOpen, setFilterOpen] = useCanvasState<boolean>("casesFilterOpen", false);
+  const [viewMode, setViewMode] = useCanvasState<"list" | "grid">("casesViewMode", "list");
+  const [selected, setSelected] = useCanvasState<string[]>("casesSelected", []);
+  const [bulkToast, setBulkToast] = useCanvasState<string>("casesBulkToast", "");
+  const [inFocusOpen] = useCanvasState<boolean>("inFocusOpen", true);
 
   function riskTone(r: RiskStatus): "deleted" | "warning" | "success" {
     if (r === "High Risk") return "deleted";
@@ -5047,128 +5444,317 @@ function CasesListView({
     return { caseId: "walmart", stage: "memo" };
   }
 
+  const filteredRows = CASE_ROWS.filter((row) => {
+    const q = search.trim().toLowerCase();
+    const matchesSearch =
+      q === "" ||
+      row.entity.toLowerCase().includes(q) ||
+      row.triggerType.toLowerCase().includes(q) ||
+      row.stageBadge.toLowerCase().includes(q);
+    const matchesRisk = riskFilter === "all" || row.riskStatus === riskFilter;
+    return matchesSearch && matchesRisk;
+  });
+  const visibleSelected = selected.filter((id) => filteredRows.some((r) => r.id === id));
+  const rangeLabel =
+    filteredRows.length === 0
+      ? `0 of ${CASE_ROWS.length}`
+      : `1–${filteredRows.length} of ${CASE_ROWS.length}`;
+
+  const toggleSelect = (id: string) => {
+    setSelected(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  };
+  const toggleSelectAll = () => {
+    const allVisibleSelected =
+      filteredRows.length > 0 && filteredRows.every((r) => selected.includes(r.id));
+    if (allVisibleSelected) {
+      setSelected(selected.filter((id) => !filteredRows.some((r) => r.id === id)));
+    } else {
+      const merged = new Set([...selected, ...filteredRows.map((r) => r.id)]);
+      setSelected([...merged]);
+    }
+  };
+  const runBulk = (action: string) => {
+    const count = visibleSelected.length;
+    if (count > 0) {
+      setBulkToast(`${action}: ${count} case(s)`);
+    } else if (selected.length > 0) {
+      setBulkToast(`${action}: ${selected.length} selected off-screen — clear filter`);
+    } else {
+      setBulkToast(`${action}: select cases first`);
+    }
+    window.setTimeout(() => setBulkToast(""), 2500);
+  };
+
   return (
-    <Stack gap={12}>
-      <InFocusBanner rows={CASE_ROWS} theme={theme} openCase={openCase} />
+    <Row gap={16} align="start">
+      <Stack gap={12} style={{ flex: 1, minWidth: 0 }}>
+        {filteredRows.length > 0 && inFocusOpen && (
+          <InFocusBanner rows={filteredRows} theme={theme} openCase={openCase} />
+        )}
 
-      <Row align="center" justify="space-between">
-        <Row gap={8} align="center">
-          <div
-            style={{
-              border: `1px solid ${theme.stroke.secondary}`,
-              borderRadius: 4,
-              padding: "4px 10px 4px 8px",
-              display: "flex",
-              gap: 6,
-              alignItems: "center",
-              fontSize: 12,
-              color: theme.text.tertiary,
-            }}
-          >
-            <span>⌕</span> Search
-          </div>
-          <div
-            style={{
-              border: `1px solid ${theme.stroke.secondary}`,
-              borderRadius: 4,
-              padding: "4px 10px",
-              display: "flex",
-              gap: 6,
-              alignItems: "center",
-              fontSize: 12,
-              color: theme.text.tertiary,
-            }}
-          >
-            ⊟ Filter
-          </div>
-        </Row>
-        <Row gap={8} align="center">
-          <Text size="small" tone="tertiary">1–8 of 8</Text>
-          <ViewInFocusToggle theme={theme} />
-          <AgentTag agentId="orchestrator" theme={theme} />
-        </Row>
-      </Row>
-
-      <Table
-        headers={[
-          "",
-          "Case (Entity)",
-          "Trigger Type",
-          "Extraction Conf.",
-          "Exposure",
-          "Net Margin %",
-          "Health Score",
-          "Risk Status",
-          "Primary Concern",
-          "Tasks",
-          "Action",
-        ]}
-        rows={CASE_ROWS.map((row) => {
-          const { caseId, stage } = caseForRow(row);
-          const isExpanded = expandedRow === row.id;
-          return [
-            <input type="checkbox" style={{ cursor: "pointer" }} />,
-            <Row gap={6} align="center">
-              <span
-                onClick={() => setExpandedRow(isExpanded ? null : row.id)}
-                style={{ color: theme.text.quaternary, fontSize: 11, cursor: "pointer", transform: isExpanded ? "rotate(90deg)" : "none", display: "inline-block" }}
-              >
-                ›
-              </span>
-              <Text weight="semibold" size="small">{row.entity}</Text>
-            </Row>,
-            row.triggerType,
-            <ExtractionConfBadge pct={row.extractionConf} theme={theme} />,
-            row.exposure,
-            <Text
-              size="small"
+        <Row align="center" justify="space-between" wrap gap={8}>
+          <Row gap={8} align="center">
+            <div
               style={{
-                color: row.netMarginPct.startsWith("-") ? theme.diff.removedLine : theme.category.green,
+                border: `1px solid ${theme.stroke.secondary}`,
+                borderRadius: 4,
+                padding: "4px 10px 4px 8px",
+                display: "flex",
+                gap: 6,
+                alignItems: "center",
+                fontSize: 12,
+                background: theme.bg.editor,
               }}
             >
-              {row.netMarginPct}
-            </Text>,
-            <HealthScorePill score={row.healthScore} theme={theme} />,
-            <Pill tone={riskTone(row.riskStatus)}>• {row.riskStatus}</Pill>,
-            <Text size="small" tone="secondary">{row.primaryConcern}</Text>,
-            row.tasks > 0 ? (
-              <span
+              <span style={{ color: theme.text.quaternary }}>⌕</span>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search"
                 style={{
-                  background: theme.accent.primary,
-                  color: "#fff",
-                  borderRadius: "50%",
-                  width: 20,
-                  height: 20,
-                  fontSize: 11,
-                  display: "inline-flex",
+                  border: "none",
+                  outline: "none",
+                  fontSize: 12,
+                  width: 120,
+                  background: "transparent",
+                  fontFamily: "Inter, sans-serif",
+                  color: theme.text.primary,
+                }}
+              />
+            </div>
+            <div style={{ position: "relative" }}>
+              <button
+                type="button"
+                onClick={() => setFilterOpen(!filterOpen)}
+                style={{
+                  border: `1px solid ${riskFilter !== "all" ? theme.accent.primary : theme.stroke.secondary}`,
+                  borderRadius: 4,
+                  padding: "4px 10px",
+                  display: "flex",
+                  gap: 6,
                   alignItems: "center",
-                  justifyContent: "center",
+                  fontSize: 12,
+                  color: theme.text.secondary,
+                  background: theme.bg.editor,
+                  cursor: "pointer",
+                  fontFamily: "Inter, sans-serif",
                 }}
               >
-                {String(row.tasks).padStart(2, "0")}
-              </span>
-            ) : (
-              <Text size="small" tone="quaternary">N/A</Text>
-            ),
-            <Button
-              variant={actionTone(row.action)}
-              style={{ height: 28, fontSize: 11 }}
-              onClick={() => openCase(caseId, stage)}
-            >
-              {row.action}
-            </Button>,
-          ];
-        })}
-        rowTone={CASE_ROWS.map((r) =>
-          r.riskStatus === "High Risk" ? "danger" : r.riskStatus === "Moderate Risk" ? "warning" : undefined,
+                ⊟ Filter{riskFilter !== "all" ? ` · ${riskFilter}` : ""}
+              </button>
+              {filterOpen && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 34,
+                    left: 0,
+                    background: theme.bg.editor,
+                    border: `1px solid ${theme.stroke.secondary}`,
+                    borderRadius: 8,
+                    boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+                    zIndex: 50,
+                    minWidth: 160,
+                    overflow: "hidden",
+                  }}
+                >
+                  {(["all", "Low Risk", "Moderate Risk", "High Risk"] as const).map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => {
+                        setRiskFilter(f);
+                        setFilterOpen(false);
+                      }}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "8px 12px",
+                        background: riskFilter === f ? theme.fill.secondary : "none",
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: 12,
+                        fontFamily: "Inter, sans-serif",
+                        color: theme.text.primary,
+                      }}
+                    >
+                      {f === "all" ? "All risk levels" : f}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Row>
+          <Row gap={8} align="center" wrap>
+            <Text size="small" tone="tertiary">
+              {rangeLabel}
+            </Text>
+            {bulkToast && <Text size="small" tone="quaternary">{bulkToast}</Text>}
+            <ToolbarIconButton icon="↓" title="Download selected" theme={theme} onClick={() => runBulk("Download")} />
+            <ToolbarIconButton icon="🏷" title="Tag selected" theme={theme} onClick={() => runBulk("Tag")} />
+            <ToolbarIconButton icon="📁" title="Move to folder" theme={theme} onClick={() => runBulk("Move")} />
+            <ToolbarIconButton icon="⋮" title="More actions" theme={theme} onClick={() => runBulk("More")} />
+            <span style={{ width: 1, height: 20, background: theme.stroke.secondary }} />
+            <ToolbarIconButton
+              icon="⊞"
+              title="Grid view"
+              theme={theme}
+              active={viewMode === "grid"}
+              onClick={() => setViewMode("grid")}
+            />
+            <ToolbarIconButton
+              icon="☰"
+              title="List view"
+              theme={theme}
+              active={viewMode === "list"}
+              onClick={() => setViewMode("list")}
+            />
+            <ViewInFocusToggle theme={theme} />
+            <AgentTag agentId="orchestrator" theme={theme} />
+          </Row>
+        </Row>
+
+        {viewMode === "grid" ? (
+          filteredRows.length === 0 ? (
+            <Callout tone="info">No cases match your search or filter. Clear filters to see all {CASE_ROWS.length} cases.</Callout>
+          ) : (
+          <Grid columns={3} gap={12}>
+            {filteredRows.map((row) => {
+              const { caseId, stage } = caseForRow(row);
+              return (
+                <div
+                  key={row.id}
+                  style={{ ...dxpCard(theme), padding: 12, cursor: "pointer" }}
+                  onClick={() => openCase(caseId, stage)}
+                >
+                  <Stack gap={6}>
+                    <Row align="center" justify="space-between">
+                      <Row gap={8} align="center">
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(row.id)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleSelect(row.id);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ cursor: "pointer" }}
+                        />
+                        <Text weight="semibold" size="small">{row.entity}</Text>
+                      </Row>
+                      <Pill tone={riskTone(row.riskStatus)}>• {row.riskStatus}</Pill>
+                    </Row>
+                    <Pill tone="neutral">{row.stageBadge}</Pill>
+                    <Text size="small" tone="tertiary">{row.triggerType} · {row.exposure}</Text>
+                    <ExtractionConfBadge pct={row.extractionConf} theme={theme} />
+                    <Button variant={actionTone(row.action)} style={{ height: 28, fontSize: 11 }} onClick={(e) => { e.stopPropagation(); openCase(caseId, stage); }}>
+                      {row.action}
+                    </Button>
+                  </Stack>
+                </div>
+              );
+            })}
+          </Grid>
+          )
+        ) : filteredRows.length === 0 ? (
+          <Callout tone="info">No cases match your search or filter. Clear filters to see all {CASE_ROWS.length} cases.</Callout>
+        ) : (
+          <Table
+            headers={[
+              <input
+                type="checkbox"
+                checked={filteredRows.length > 0 && filteredRows.every((r) => selected.includes(r.id))}
+                onChange={toggleSelectAll}
+                style={{ cursor: "pointer" }}
+              />,
+              "Case (Entity)",
+              "Trigger Type",
+              "Extraction Conf.",
+              "Exposure",
+              "Net Margin %",
+              "Health Score",
+              "Risk Status",
+              "Primary Concern",
+              "Tasks",
+              "Action",
+            ]}
+            rows={filteredRows.map((row) => {
+              const { caseId, stage } = caseForRow(row);
+              const isExpanded = expandedRow === row.id;
+              return [
+                <input
+                  type="checkbox"
+                  checked={selected.includes(row.id)}
+                  onChange={() => toggleSelect(row.id)}
+                  style={{ cursor: "pointer" }}
+                />,
+                <Row gap={6} align="center">
+                  <span
+                    onClick={() => setExpandedRow(isExpanded ? null : row.id)}
+                    style={{ color: theme.text.quaternary, fontSize: 11, cursor: "pointer", transform: isExpanded ? "rotate(90deg)" : "none", display: "inline-block" }}
+                  >
+                    ›
+                  </span>
+                  <Text weight="semibold" size="small">{row.entity}</Text>
+                </Row>,
+                row.triggerType,
+                <ExtractionConfBadge pct={row.extractionConf} theme={theme} />,
+                row.exposure,
+                <Text
+                  size="small"
+                  style={{
+                    color: row.netMarginPct.startsWith("-") ? theme.diff.removedLine : theme.category.green,
+                  }}
+                >
+                  {row.netMarginPct}
+                </Text>,
+                <HealthScorePill score={row.healthScore} theme={theme} />,
+                <Pill tone={riskTone(row.riskStatus)}>• {row.riskStatus}</Pill>,
+                <Text size="small" tone="secondary">{row.primaryConcern}</Text>,
+                row.tasks > 0 ? (
+                  <span
+                    style={{
+                      background: theme.accent.primary,
+                      color: "#fff",
+                      borderRadius: "50%",
+                      width: 20,
+                      height: 20,
+                      fontSize: 11,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {String(row.tasks).padStart(2, "0")}
+                  </span>
+                ) : (
+                  <Text size="small" tone="quaternary">N/A</Text>
+                ),
+                <Row gap={4} align="center">
+                  <Button
+                    variant={actionTone(row.action)}
+                    style={{ height: 28, fontSize: 11 }}
+                    onClick={() => openCase(caseId, stage)}
+                  >
+                    {row.action}
+                  </Button>
+                  <RowActionMenu row={row} theme={theme} openCase={openCase} caseId={caseId} stage={stage} />
+                </Row>,
+              ];
+            })}
+            rowTone={filteredRows.map((r) =>
+              r.riskStatus === "High Risk" ? "danger" : r.riskStatus === "Moderate Risk" ? "warning" : undefined,
+            )}
+            striped
+            renderRowExtra={(ri) => {
+              const row = filteredRows[ri];
+              return expandedRow === row.id ? <CaseRowExpansion row={row} theme={theme} openCase={openCase} /> : null;
+            }}
+          />
         )}
-        striped
-        renderRowExtra={(ri) => {
-          const row = CASE_ROWS[ri];
-          return expandedRow === row.id ? <CaseRowExpansion row={row} theme={theme} openCase={openCase} /> : null;
-        }}
-      />
-    </Stack>
+      </Stack>
+      <InSightAssistPanel theme={theme} scope="cases" />
+    </Row>
   );
 }
 
@@ -5243,17 +5829,22 @@ export default function FinancialSpreadingACOS() {
   const [view, setView] = useCanvasState<View>("acosView", "command");
   const [caseId, setCaseId] = useCanvasState<CaseId>("activeCaseId", "walmart");
   const [, setStageId] = useCanvasState<StageId>("caseStage", "review");
+  const [createOpen, setCreateOpen] = useCanvasState<boolean>("createCaseOpen", false);
 
   const openCase = (id: CaseId, stage?: StageId) => {
     setCaseId(id);
     setStageId(stage ?? CASES[id].defaultStage);
     setView("case");
+    setCreateOpen(false);
   };
 
   const caseContext = view === "case" ? `${CASES[caseId].title} · ${CASES[caseId].caseRef}` : undefined;
 
   return (
     <Stack gap={8}>
+      {createOpen && (
+        <CreateCaseDialog theme={theme} openCase={openCase} onClose={() => setCreateOpen(false)} />
+      )}
       <DxpShell view={view} setView={setView} theme={theme} caseContext={caseContext}>
         {view === "command" && <CommandCenterView openCase={openCase} setView={setView} theme={theme} />}
         {view === "portfolio" && <PortfolioView openCase={openCase} theme={theme} />}
