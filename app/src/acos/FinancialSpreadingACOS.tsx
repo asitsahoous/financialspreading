@@ -19,7 +19,8 @@ import {
   useHostTheme,
 } from "./ui";
 import { useCallback, useEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { showActionToast } from "./state";
+import { resetDemoSession, showActionToast } from "./state";
+import { renderTextWithSopLinks, SopLink, SopViewerPanel } from "./sopPolicy";
 
 /** Minimal shape used for click-outside checks — avoids importing React.MouseEvent, which
  *  is not exported the same way across the app's Vite/@types-react setup and the Canvas
@@ -687,12 +688,16 @@ function DxpShell({
   setView,
   theme,
   caseContext,
+  onOpenCreditPolicy,
+  onOpenTrustLayer,
 }: {
   children: ReactNode;
   view: View;
   setView: (v: View) => void;
   theme: FigmaTheme;
   caseContext?: string;
+  onOpenCreditPolicy?: () => void;
+  onOpenTrustLayer?: () => void;
 }) {
   const [assistOpen, setAssistOpen] = useCanvasState<boolean>("insightAssistOpen", true);
   const [, setCreateCaseOpen] = useCanvasState<boolean>("createCaseOpen", false);
@@ -723,11 +728,42 @@ function DxpShell({
         />
         <DxpTabBar
           tabs={tabs}
-          active={view}
+          active={navHighlightView(view)}
           onChange={setView}
           theme={theme}
           trailing={
             <Row gap={8} align="center">
+              {onOpenTrustLayer && (
+                <Button
+                  variant="ghost"
+                  style={{ height: 28, fontSize: 12, borderRadius: 4 }}
+                  onClick={onOpenTrustLayer}
+                  data-testid="trust-layer-button"
+                >
+                  Trust Layer
+                </Button>
+              )}
+              {onOpenCreditPolicy && (
+                <Button
+                  variant="ghost"
+                  style={{ height: 28, fontSize: 12, borderRadius: 4 }}
+                  onClick={onOpenCreditPolicy}
+                  data-testid="credit-policy-button"
+                >
+                  Credit Policy
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                style={{ height: 28, fontSize: 12, borderRadius: 4 }}
+                onClick={() => {
+                  if (window.confirm("Reset all demo interactions (gates, audit log, filters)?")) {
+                    resetDemoSession();
+                  }
+                }}
+              >
+                Reset demo
+              </Button>
               <Button
                 variant="primary"
                 style={{ height: 28, fontSize: 12, borderRadius: 4 }}
@@ -890,6 +926,89 @@ const AGENTS: Record<AgentId, AgentDef> = {
     trustOutputs: ["Per-connector sync status", "Entity ID + scope audit", "Records cited in memo"],
   },
 };
+
+/** Five human gates — governance anchors across the ACOS trust layer. */
+const TRUST_GATES = [
+  {
+    id: 1,
+    label: "Gate 1",
+    title: "Confirm document set",
+    agent: "Intake Agent",
+    sop: "§4.2",
+    why: "Agents halt extraction on incomplete packages — humans sign before any spread work begins.",
+  },
+  {
+    id: 2,
+    label: "Gate 2",
+    title: "Sign off spread",
+    agent: "Mapping + Review QA",
+    sop: "§7.4",
+    why: "Exceptions surface with page-level lineage — Risk Agent cannot run until analysts approve the spread.",
+  },
+  {
+    id: 3,
+    label: "Gate 3",
+    title: "Risk officer review",
+    agent: "Risk Agent",
+    sop: "Covenant schedule",
+    why: "Ratio formulas and covenant tests are agent-calculated — risk officers govern release to memo.",
+  },
+  {
+    id: 4,
+    label: "Gate 4",
+    title: "Memo coherence review",
+    agent: "Memo Composer",
+    sop: "§12",
+    why: "Every memo paragraph cites connector APIs — analysts verify bureau and AML/KYC evidence before committee.",
+  },
+  {
+    id: 5,
+    label: "Gate 5",
+    title: "Credit committee decision",
+    agent: "Decision Synthesis",
+    sop: "Committee policy",
+    why: "Decision rationale tree aggregates spread, connectors, and qualitative risk — committee signs the outcome.",
+  },
+] as const;
+
+/** InSight DXP Trust Fabric — four pillars mapped to lending demo surfaces (gates remain primary). */
+const TRUST_FABRIC_PILLARS = [
+  {
+    id: "sources",
+    label: "Trusted Sources",
+    short: "Sources",
+    color: "#1860ec",
+    demo: "Connector APIs on EIN/DUNS · document manifest per SOP §4.2",
+    example: "Northern Retail: 2/9 docs — Intake Agent halts before spread. Walmart memo: Experian/Equifax/D&B synced on borrower EIN.",
+  },
+  {
+    id: "evidence",
+    label: "Trusted Evidence",
+    short: "Evidence",
+    color: "#6b7280",
+    demo: "Uploaded policy + source PDFs with lifecycle and § linkage",
+    example: "10-K page 43 in split-pane · §7.4 mapping rule opens Credit Policy viewer · seven-stage lifecycle rail.",
+  },
+  {
+    id: "reasoning",
+    label: "Trusted Reasoning",
+    short: "Reasoning",
+    color: "#1f8a65",
+    demo: "Per-field confidence, agent reasoning, human correction lineage",
+    example: "Walmart Total Assets 41% confidence — Trust Inspector shows OCR lineage and change log before Gate 2.",
+  },
+  {
+    id: "action",
+    label: "Trusted Action",
+    short: "Action",
+    color: "#6b4c9a",
+    demo: "Gated orchestration, masked identifiers, immutable runtime log",
+    example: "Orchestrator blocks Risk Agent until Gate 2 signed · connector IDs masked in UI · every accept/override appends to audit log.",
+  },
+] as const;
+
+const TRUST_FABRIC_TAGLINE =
+  "InSight governs evidence across the fabric — it does not replace your system of record. Five human gates are the lending checkpoints on top.";
 
 type StageId =
   | "intake"
@@ -1386,7 +1505,7 @@ type MappingRow = {
   auditId?: string;
 };
 
-const MAPPING_DATA: MappingRow[] = [
+const MAPPING_CORE_ROWS: MappingRow[] = [
   {
     field: "Cash & Equivalents",
     value: "$9,857M",
@@ -1449,6 +1568,60 @@ const MAPPING_DATA: MappingRow[] = [
     auditId: "trace-8845-wmt-rev",
   },
 ];
+
+const MAPPING_SYNTHETIC_FIELDS = [
+  "Prepaid Expenses",
+  "Other Current Assets",
+  "Property Plant & Equipment",
+  "Accumulated Depreciation",
+  "Goodwill",
+  "Intangible Assets",
+  "Short-term Borrowings",
+  "Accounts Payable",
+  "Accrued Liabilities",
+  "Deferred Revenue",
+  "Current Portion LT Debt",
+  "Operating Lease Liabilities",
+  "Retained Earnings",
+  "Treasury Stock",
+  "Cost of Goods Sold",
+  "Gross Profit",
+  "Operating Expenses",
+  "SG&A",
+  "Depreciation & Amortization",
+  "Interest Expense",
+  "Income Tax Expense",
+  "Net Income",
+  "EBITDA",
+  "Working Capital",
+  "Free Cash Flow",
+  "CapEx",
+  "Dividends Paid",
+  "Inventory - Finished Goods",
+  "Inventory - Raw Materials",
+  "Deferred Tax Assets",
+];
+
+const MAPPING_DATA: MappingRow[] = (() => {
+  const core = MAPPING_CORE_ROWS;
+  const target = 140;
+  const extras: MappingRow[] = [];
+  for (let i = 0; i < target - core.length; i++) {
+    const label = MAPPING_SYNTHETIC_FIELDS[i % MAPPING_SYNTHETIC_FIELDS.length];
+    const suffix = i >= MAPPING_SYNTHETIC_FIELDS.length ? ` (${Math.floor(i / MAPPING_SYNTHETIC_FIELDS.length) + 1})` : "";
+    extras.push({
+      field: `${label}${suffix}`,
+      value: `$${(420 + i * 17).toLocaleString()}M`,
+      confidence: "high",
+      agentId: "mapping",
+      sop: `§${7 + (i % 4)}.${(i % 6) + 1}`,
+      source: `10-K p.${38 + (i % 18)}`,
+      reasoning: "Auto-mapped per COA template; OCR confidence ≥95%; within YoY tolerance.",
+      auditId: `trace-wmt-synth-${i + 1}`,
+    });
+  }
+  return [...core, ...extras];
+})();
 
 // GAAP normalization — raw line item broken into internal chart-of-account components
 type NormalizedRow = { lineItem: string; component: string; fy2025: string; fy2026: string; indent: number };
@@ -1573,7 +1746,7 @@ const WALMART_CONNECTORS: ConnectorFeed[] = [
 const WALMART_MEMO_SECTIONS: MemoSection[] = [
   {
     title: "1. Borrower summary",
-    body: "Walmart Inc. — Term Loan B request $2.5B. Spread draft reflects FY2025 10-K; 1 mapping exception under review.",
+    body: "Walmart Inc. — Term Loan B request $750M (negotiated structure: $250M revolver + $500M asset-backed line). Spread reflects FY2025 10-K; 1 mapping exception under review.",
     source: "Internal spread + Mapping Agent",
     connectorRef: "—",
   },
@@ -1659,7 +1832,12 @@ const NORTHERN_RETAIL_MEMO_SECTIONS: MemoSection[] = [
   },
 ];
 
-type GateSignKind = "gate2-sign" | "gate3-sign" | "gate4-sign" | "gate5-sign";
+type GateSignKind = "gate1-sign" | "gate2-sign" | "gate3-sign" | "gate4-sign" | "gate5-sign";
+
+type IntakeDocOverride = Pick<IntakeDocRow, "received" | "uploadedBy" | "uploadedOn" | "sizeKb" | "classification">;
+type IntakeDocOverridesByCase = Partial<Record<CaseId, Record<string, IntakeDocOverride>>>;
+
+type DemoPortfolioContext = { entity: string; concern: string } | null;
 
 type AuditEvent = RuntimeLogEntry & { id: string; caseId: CaseId; gateAction?: GateSignKind };
 
@@ -1904,7 +2082,35 @@ const CASE_ROWS: CaseRowData[] = [
     action: "Review",
     aiBlurb: "Clean financials — all ratios within covenant bounds. New loan request eligible for fast-track.",
   },
+  {
+    id: "NRT-009",
+    entity: "Northern Retail LLC",
+    stageBadge: "Intake Blocked",
+    triggerType: "Revolving Credit",
+    extractionConf: 22,
+    exposure: "$8.5M",
+    netMarginPct: "-14.30%",
+    healthScore: 2.4,
+    riskStatus: "High Risk",
+    primaryConcern: "Incomplete Doc Set",
+    tasks: 7,
+    action: "Resolve",
+    aiBlurb:
+      "Gate 1 blocked — only 2 of 9 documents per SOP §4.2. Intake Agent halted the pipeline; human override is audited but Gate 1 does not pass until documents arrive.",
+  },
 ];
+
+/** Maps portfolio list row IDs to the interactive demo case workspace + stage. */
+function caseRouteForRowId(rowId: string): { caseId: CaseId; stage: StageId } {
+  if (rowId.startsWith("NRT")) return { caseId: "northern-retail", stage: "intake" };
+  if (rowId.startsWith("WMT") || rowId.startsWith("CHY") || rowId.startsWith("TRC")) {
+    return { caseId: "walmart", stage: "review" };
+  }
+  if (rowId.startsWith("AWM") || rowId.startsWith("VNT") || rowId.startsWith("HRZ") || rowId.startsWith("MBE") || rowId.startsWith("SXT")) {
+    return { caseId: "walmart", stage: "assessment" };
+  }
+  return { caseId: "walmart", stage: "memo" };
+}
 
 // ─── Ratio / Validate data ────────────────────────────────────────────────────
 
@@ -2128,37 +2334,515 @@ function QueueTrustFooter({
   stageLabel,
   theme,
   onViewStage,
+  trustNote,
 }: {
   gate: string;
   reviewMin: string;
   stageLabel: string;
   theme: FigmaTheme;
   onViewStage?: () => void;
+  trustNote?: string;
 }) {
   return (
-    <Row
-      align="center"
-      justify="space-between"
-      style={{
-        marginTop: 4,
-        paddingTop: 8,
-        borderTop: `1px solid ${theme.stroke.tertiary}`,
-      }}
-    >
-      <Text size="small" tone="quaternary">
-        Agent trace · {gate} · Est. {reviewMin} review
-      </Text>
-      {onViewStage && (
-        <Button variant="ghost" onClick={onViewStage} style={{ fontSize: 11, height: 24 }}>
-          View {stageLabel} →
-        </Button>
+    <Stack gap={4}>
+      {trustNote && (
+        <Text size="small" tone="tertiary" style={{ fontStyle: "italic" }}>
+          {trustNote}
+        </Text>
       )}
-    </Row>
+      <Row
+        align="center"
+        justify="space-between"
+        style={{
+          marginTop: trustNote ? 0 : 4,
+          paddingTop: 8,
+          borderTop: `1px solid ${theme.stroke.tertiary}`,
+        }}
+      >
+        <Text size="small" tone="quaternary">
+          Agent trace · {gate} · Est. {reviewMin} review
+        </Text>
+        {onViewStage && (
+          <Button variant="ghost" onClick={onViewStage} style={{ fontSize: 11, height: 24 }}>
+            View {stageLabel} →
+          </Button>
+        )}
+      </Row>
+    </Stack>
   );
 }
 
-function CaseTrustStrip({ caseDef, auditCount, theme }: { caseDef: CaseDefinition; auditCount: number; theme: FigmaTheme }) {
+function TrustFabricFlowStrip({ theme: _theme, compact }: { theme: FigmaTheme; compact?: boolean }) {
+  return (
+    <Stack gap={compact ? 4 : 6}>
+      <Row gap={4} wrap align="center" data-testid="trust-fabric-flow">
+        {TRUST_FABRIC_PILLARS.map((p, i) => (
+          <Row key={p.id} gap={4} align="center">
+            <Row gap={5} align="center">
+              <div
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: p.color,
+                  flexShrink: 0,
+                }}
+                aria-hidden
+              />
+              <Text size="small" weight={compact ? "regular" : "semibold"} as="span" style={{ color: p.color }}>
+                {compact ? p.short : p.label}
+              </Text>
+            </Row>
+            {i < TRUST_FABRIC_PILLARS.length - 1 && (
+              <Text size="small" tone="quaternary" as="span">
+                →
+              </Text>
+            )}
+          </Row>
+        ))}
+      </Row>
+      {!compact && (
+        <Text size="small" tone="tertiary">
+          {TRUST_FABRIC_TAGLINE}
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
+function TrustGateLadder({ theme, highlightGate }: { theme: FigmaTheme; highlightGate?: number }) {
+  return (
+    <Stack gap={6}>
+      <Row gap={4} wrap align="center">
+        {TRUST_GATES.map((g, i) => (
+          <Row key={g.id} gap={4} align="center">
+            <div
+              style={{
+                padding: "4px 8px",
+                borderRadius: 6,
+                border: `1px solid ${highlightGate === g.id ? theme.accent.primary : theme.stroke.secondary}`,
+                background: highlightGate === g.id ? theme.fill.tertiary : theme.bg.editor,
+                fontSize: 10,
+                lineHeight: 1.3,
+                minWidth: 72,
+              }}
+            >
+              <Text weight="semibold" size="small" as="span">
+                {g.label}
+              </Text>
+              <Text size="small" tone="quaternary" as="span">
+                {g.title}
+              </Text>
+            </div>
+            {i < TRUST_GATES.length - 1 && (
+              <Text size="small" tone="quaternary" as="span">
+                →
+              </Text>
+            )}
+          </Row>
+        ))}
+      </Row>
+      <Text size="small" tone="tertiary">
+        Agents run between gates · Humans approve at each checkpoint · Policy anchors every block
+      </Text>
+    </Stack>
+  );
+}
+
+function TrustLayerBanner({
+  theme,
+  onOpenTrustLayer,
+  onOpenCreditPolicy,
+}: {
+  theme: FigmaTheme;
+  onOpenTrustLayer?: () => void;
+  onOpenCreditPolicy?: () => void;
+}) {
+  return (
+    <div style={{ ...dxpCard(theme), padding: "12px 16px" }}>
+      <Stack gap={10}>
+        <Row align="start" justify="space-between" wrap gap={8}>
+          <Stack gap={4} style={{ flex: 1, minWidth: 200 }}>
+            <Row gap={8} align="center">
+              <Text weight="semibold">ACOS Trust Layer</Text>
+              <Pill tone="info">Agents operate · Humans govern</Pill>
+            </Row>
+            <Text size="small" tone="secondary">
+              Not a spreadsheet with a chatbot — ten named agents do cognitive work (spreading, exceptions, covenant
+              scans), five human gates govern release, and every action traces to uploaded SOP clauses and runtime audit
+              events.
+            </Text>
+            <TrustFabricFlowStrip theme={theme} compact />
+          </Stack>
+          <Row gap={6} align="center">
+            {onOpenTrustLayer && (
+              <Button variant="primary" style={{ height: 28, fontSize: 11 }} onClick={onOpenTrustLayer}>
+                View trust model
+              </Button>
+            )}
+            {onOpenCreditPolicy && (
+              <Button variant="ghost" style={{ height: 28, fontSize: 11 }} onClick={onOpenCreditPolicy}>
+                Credit Policy
+              </Button>
+            )}
+          </Row>
+        </Row>
+        <TrustGateLadder theme={theme} />
+      </Stack>
+    </div>
+  );
+}
+
+function TrustLayerPanel({
+  open,
+  onClose,
+  theme,
+  onOpenCreditPolicy,
+  onNavigateAgents,
+}: {
+  open: boolean;
+  onClose: () => void;
+  theme: FigmaTheme;
+  onOpenCreditPolicy?: () => void;
+  onNavigateAgents?: () => void;
+}) {
+  if (!open) return null;
+  const agentList = Object.values(AGENTS);
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.35)",
+        zIndex: 250,
+        display: "flex",
+        justifyContent: "flex-end",
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          width: 460,
+          maxWidth: "100%",
+          height: "100%",
+          background: theme.bg.editor,
+          borderLeft: `1px solid ${theme.stroke.secondary}`,
+          padding: 20,
+          overflow: "auto",
+          boxShadow: "-4px 0 24px rgba(0,0,0,0.12)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+        data-testid="trust-layer-panel"
+      >
+        <Stack gap={14}>
+          <Row align="center" justify="space-between">
+            <Text weight="semibold">ACOS Trust Layer</Text>
+            <button type="button" onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18 }}>
+              ×
+            </button>
+          </Row>
+          <Text size="small" tone="tertiary">
+            Demo fixture · read-only governance model
+          </Text>
+          <TrustFabricFlowStrip theme={theme} />
+          <Callout tone="info" title="Why trust is the product differentiator">
+            Evalueserve sells accuracy. Moody's sells integrated content. ACOS sells orchestration you can see — from
+            portfolio alert to cell-level lineage, with humans signing at five named gates. The Trust Fabric below maps
+            platform pillars to what you see in Walmart and Northern Retail demos.
+          </Callout>
+          <Stack gap={8}>
+            <Text weight="semibold" size="small">
+              Trust Fabric · lending surfaces
+            </Text>
+            <Text size="small" tone="tertiary">
+              Gates (G1–G5) govern release; fabric pillars show where evidence is sourced, verified, reasoned, and
+              acted on.
+            </Text>
+            <Grid columns={1} gap={8}>
+              {TRUST_FABRIC_PILLARS.map((p) => (
+                <div
+                  key={p.id}
+                  style={{
+                    ...dxpCard(theme),
+                    padding: 10,
+                    borderLeft: `3px solid ${p.color}`,
+                  }}
+                >
+                  <Row gap={8} align="center" wrap>
+                    <div
+                      style={{ width: 8, height: 8, borderRadius: "50%", background: p.color, flexShrink: 0 }}
+                      aria-hidden
+                    />
+                    <Text weight="semibold" size="small" style={{ color: p.color }}>
+                      {p.label}
+                    </Text>
+                  </Row>
+                  <Text size="small" tone="secondary" style={{ marginTop: 4 }}>
+                    {p.demo}
+                  </Text>
+                  <Text size="small" tone="tertiary" style={{ marginTop: 4, fontStyle: "italic" }}>
+                    Demo: {p.example}
+                  </Text>
+                </div>
+              ))}
+            </Grid>
+          </Stack>
+          <Stack gap={8}>
+            <Text weight="semibold" size="small">
+              ACOS governance (gates + agents)
+            </Text>
+            <Grid columns={1} gap={8}>
+              <div style={{ ...dxpCard(theme), padding: 10 }}>
+                <Text weight="semibold" size="small">
+                  Human gates
+                </Text>
+                <Text size="small" tone="secondary">
+                  Five checkpoints where analysts, risk officers, and committee must sign before agents advance the
+                  pipeline. Overrides are logged but do not bypass gates.
+                </Text>
+              </div>
+              <div style={{ ...dxpCard(theme), padding: 10 }}>
+                <Text weight="semibold" size="small">
+                  Agent traces
+                </Text>
+                <Text size="small" tone="secondary">
+                  Every stage records who acted (agent, human, system), structured input/reasoning/output, and runtime
+                  audit events — not black-box scores.
+                </Text>
+              </div>
+              <div style={{ ...dxpCard(theme), padding: 10 }}>
+                <Text weight="semibold" size="small">
+                  Policy anchors
+                </Text>
+                <Text size="small" tone="secondary">
+                  Uploaded credit policy (SOP §4.2 manifest, §7.4 mapping, §12 AML/KYC) binds agent behavior. Click any §
+                  link in the UI to open the policy viewer.
+                </Text>
+              </div>
+            </Grid>
+          </Stack>
+          <Stack gap={8}>
+            <Text weight="semibold" size="small">
+              Five human gates
+            </Text>
+            {TRUST_GATES.map((g) => (
+              <div key={g.id} style={{ ...dxpCard(theme), padding: 10 }}>
+                <Row gap={8} align="center" wrap>
+                  <Pill tone="warning">{g.label}</Pill>
+                  <Text weight="semibold" size="small">
+                    {g.title}
+                  </Text>
+                </Row>
+                <Text size="small" tone="tertiary" style={{ marginTop: 4 }}>
+                  {g.agent} · SOP {g.sop}
+                </Text>
+                <Text size="small" tone="secondary" style={{ marginTop: 4 }}>
+                  {g.why}
+                </Text>
+              </div>
+            ))}
+          </Stack>
+          <Stack gap={8}>
+            <Row align="center" justify="space-between">
+              <Text weight="semibold" size="small">
+                Ten named agents
+              </Text>
+              {onNavigateAgents && (
+                <Button variant="ghost" style={{ height: 26, fontSize: 11 }} onClick={onNavigateAgents}>
+                  Open Agents tab →
+                </Button>
+              )}
+            </Row>
+            <Text size="small" tone="secondary">
+              {agentList.length} specialized agents + Case Orchestrator. Each has visible identity, trust outputs, and
+              optional human gate linkage.
+            </Text>
+            <Row gap={6} wrap>
+              {agentList.map((a) => (
+                <AgentTag key={a.id} agentId={a.id} theme={theme} />
+              ))}
+            </Row>
+          </Stack>
+          <Stack gap={8}>
+            <Text weight="semibold" size="small">
+              Demo story anchors
+            </Text>
+            <Text size="small" tone="secondary">
+              <strong>Walmart Inc.</strong> — happy path: Mapping Agent completed 138/140 fields, Review Agent flagged
+              one outlier, Gate 2 pending your sign-off (~12 min review, ~2.5 days saved).
+            </Text>
+            <Text size="small" tone="secondary">
+              <strong>Northern Retail LLC</strong> — sad path: Intake Agent blocked at Gate 1 (2/9 docs per SOP §4.2).
+              Same trust model as happy path — structured trace, audited override, pipeline held.
+            </Text>
+          </Stack>
+          <Row gap={8}>
+            {onOpenCreditPolicy && (
+              <Button variant="ghost" onClick={onOpenCreditPolicy}>
+                Open Credit Policy
+              </Button>
+            )}
+            <Button variant="primary" onClick={onClose}>
+              Close
+            </Button>
+          </Row>
+        </Stack>
+      </div>
+    </div>
+  );
+}
+
+function trustStripNarrative(gateLabel: string, caseId: CaseId): string {
+  if (gateLabel.includes("Gate 1")) {
+    return caseId === "northern-retail"
+      ? "Intake Agent stopped — incomplete manifest per SOP §4.2. Humans sign Gate 1; agents do not guess."
+      : "Document set verified — Gate 1 signed. Extraction and mapping agents ran overnight.";
+  }
+  if (gateLabel.includes("Gate 2")) {
+    return "Spread exceptions surfaced with page lineage — your Gate 2 sign-off releases Risk Agent for covenant analysis.";
+  }
+  if (gateLabel.includes("Gate 3")) {
+    return "Risk Agent calculated ratios and covenant tests — risk officer signs Gate 3 before memo composition.";
+  }
+  if (gateLabel.includes("Gate 4")) {
+    return "Memo paragraphs cite connector APIs with masked entity IDs — analyst coherence review at Gate 4.";
+  }
+  if (gateLabel.includes("Gate 5")) {
+    return "Decision Synthesis Agent built the rationale tree — credit committee signs Gate 5 to close the case.";
+  }
+  if (gateLabel.includes("closed")) {
+    return "Full chain of custody recorded — portfolio alert through committee decision, every gate signed.";
+  }
+  return "Trust is structural: agent traces, human gates, and policy anchors on every case action.";
+}
+
+type CaseProgress = {
+  gateLabel: string;
+  gateTone: CaseDefinition["gateTone"];
+  orchestratorStatus: string;
+  nextBestAction: string;
+  primaryCta: string;
+  primaryStage: StageId;
+  statusLabel: string;
+};
+
+function deriveCaseProgress(
+  caseDef: CaseDefinition,
+  caseId: CaseId,
+  signed: Set<GateSignKind>,
+  remainingExceptions: number,
+  opts?: { receivedCount?: number; totalDocs?: number; northernUnlocked?: boolean },
+): CaseProgress {
+  const receivedCount = opts?.receivedCount ?? caseDef.intakeDocs.filter((d) => d.received).length;
+  const totalDocs = opts?.totalDocs ?? caseDef.intakeDocs.length;
+  const northernUnlocked = opts?.northernUnlocked ?? false;
+
+  if (caseId === "northern-retail" && !northernUnlocked) {
+    const missing = totalDocs - receivedCount;
+    return {
+      gateLabel: "Gate 1 blocked",
+      gateTone: "deleted",
+      orchestratorStatus: `${receivedCount}/${totalDocs} documents received — extraction pipeline held`,
+      nextBestAction:
+        missing > 0
+          ? `Receive ${missing} missing document(s), then sign Gate 1`
+          : "All documents received — sign Gate 1 to release pipeline",
+      primaryCta: missing > 0 ? "Upload documents" : "Sign Gate 1",
+      primaryStage: "intake",
+      statusLabel: "Blocked",
+    };
+  }
+  if (signed.has("gate5-sign")) {
+    return {
+      gateLabel: "Case closed",
+      gateTone: "success",
+      orchestratorStatus: "Credit committee decision recorded — case closed",
+      nextBestAction: "Review runtime log for full chain of custody",
+      primaryCta: "View decision",
+      primaryStage: "decision",
+      statusLabel: "Approved",
+    };
+  }
+  if (signed.has("gate4-sign")) {
+    return {
+      gateLabel: "Gate 5 pending",
+      gateTone: "warning",
+      orchestratorStatus: "Decision package ready — committee sign-off required",
+      nextBestAction: "Review committee package and sign Gate 5",
+      primaryCta: "Sign committee decision",
+      primaryStage: "decision",
+      statusLabel: "In Progress",
+    };
+  }
+  if (signed.has("gate3-sign")) {
+    return {
+      gateLabel: "Gate 4 pending",
+      gateTone: "warning",
+      orchestratorStatus: "Memo Composer draft ready — coherence review required",
+      nextBestAction: "Review connector citations and sign Gate 4",
+      primaryCta: "Review memo",
+      primaryStage: "memo",
+      statusLabel: "In Progress",
+    };
+  }
+  if (signed.has("gate2-sign")) {
+    return {
+      gateLabel: "Gate 3 pending",
+      gateTone: "warning",
+      orchestratorStatus: "Risk Agent active — ratio and covenant analysis running",
+      nextBestAction: "Review Risk Agent output and sign Gate 3",
+      primaryCta: "Review assessment",
+      primaryStage: "assessment",
+      statusLabel: "In Progress",
+    };
+  }
+  if (remainingExceptions > 0) {
+    return {
+      gateLabel: "Gate 2 pending",
+      gateTone: "warning",
+      orchestratorStatus: caseDef.orchestratorStatus,
+      nextBestAction: `Resolve ${remainingExceptions} mapping exception(s) on Exceptions tab, then sign Gate 2`,
+      primaryCta: "Review exception",
+      primaryStage: "review",
+      statusLabel: "In Progress",
+    };
+  }
+  return {
+    gateLabel: "Gate 2 pending",
+    gateTone: "warning",
+    orchestratorStatus: caseDef.orchestratorStatus,
+    nextBestAction: "Sign Gate 2 to release Risk Agent for ratio calculation",
+    primaryCta: "Sign Gate 2",
+    primaryStage: "review",
+    statusLabel: "In Progress",
+  };
+}
+
+const MAPPING_PAGE_SIZE = 20;
+
+function CaseTrustStrip({
+  caseDef,
+  auditCount,
+  theme,
+  openExceptions,
+  caseId,
+  gateLabel,
+  gateTone,
+}: {
+  caseDef: CaseDefinition;
+  auditCount: number;
+  theme: FigmaTheme;
+  openExceptions?: number;
+  caseId?: CaseId;
+  gateLabel?: string;
+  gateTone?: CaseDefinition["gateTone"];
+}) {
   const eventCount = caseDef.runtimeLog.length + auditCount;
+  const exceptions = openExceptions ?? caseDef.openExceptions;
+  const resolvedGateLabel = gateLabel ?? caseDef.gateLabel;
+  const resolvedGateTone = gateTone ?? caseDef.gateTone;
+  const narrative = trustStripNarrative(resolvedGateLabel, caseId ?? "walmart");
+  const activeGate = TRUST_GATES.find((g) => resolvedGateLabel.toLowerCase().includes(`gate ${g.id}`))?.id;
   return (
     <div
       style={{
@@ -2167,61 +2851,106 @@ function CaseTrustStrip({ caseDef, auditCount, theme }: { caseDef: CaseDefinitio
         background: theme.bg.elevated,
       }}
     >
-      <Row gap={16} wrap align="center">
-        <Stack gap={2}>
-          <Text size="small" tone="tertiary">
-            Trust score
+      <Stack gap={8}>
+        <Row align="center" justify="space-between" wrap gap={6}>
+          <Row gap={8} align="center">
+            <Text weight="semibold" size="small">
+              Trust Layer
+            </Text>
+            <Pill tone="info">Case metrics</Pill>
+          </Row>
+          <Text size="small" tone="tertiary" style={{ fontStyle: "italic", maxWidth: 480 }}>
+            {narrative}
           </Text>
-          <Text weight="semibold" size="small">
-            {caseDef.trustScore}
-          </Text>
-        </Stack>
-        <Stack gap={2}>
-          <Text size="small" tone="tertiary">
-            Open exceptions
-          </Text>
-          <Text weight="semibold" size="small">
-            {caseDef.openExceptions}
-          </Text>
-        </Stack>
-        <Stack gap={2}>
-          <Text size="small" tone="tertiary">
-            Human gate
-          </Text>
-          <Pill tone={caseDef.gateTone}>{caseDef.gateLabel}</Pill>
-        </Stack>
-        <Stack gap={2}>
-          <Text size="small" tone="tertiary">
-            Agent time saved
-          </Text>
-          <Text weight="semibold" size="small">
-            {caseDef.agentTimeSaved}
-          </Text>
-        </Stack>
-        <Stack gap={2}>
-          <Text size="small" tone="tertiary">
-            Audit events
-          </Text>
-          <Text weight="semibold" size="small">
-            {eventCount}
-          </Text>
-        </Stack>
-      </Row>
+        </Row>
+        <TrustGateLadder theme={theme} highlightGate={activeGate} />
+        <Row gap={16} wrap align="center">
+          <Stack gap={2}>
+            <Text size="small" tone="tertiary">
+              Trust score
+            </Text>
+            <Text weight="semibold" size="small">
+              {caseDef.trustScore}
+            </Text>
+          </Stack>
+          <Stack gap={2}>
+            <Text size="small" tone="tertiary">
+              Open exceptions
+            </Text>
+            <Text weight="semibold" size="small">
+              {exceptions}
+            </Text>
+          </Stack>
+          <Stack gap={2}>
+            <Text size="small" tone="tertiary">
+              Human gate
+            </Text>
+            <Pill tone={resolvedGateTone}>{resolvedGateLabel}</Pill>
+          </Stack>
+          <Stack gap={2}>
+            <Text size="small" tone="tertiary">
+              Agent time saved
+            </Text>
+            <Text weight="semibold" size="small">
+              {caseDef.agentTimeSaved}
+            </Text>
+          </Stack>
+          <Stack gap={2}>
+            <Text size="small" tone="tertiary">
+              Audit events
+            </Text>
+            <Text weight="semibold" size="small">
+              {eventCount}
+            </Text>
+          </Stack>
+        </Row>
+      </Stack>
     </div>
   );
 }
 
 type GateAction =
+  | { kind: "gate1-sign" }
   | { kind: "gate2-sign" }
   | { kind: "gate3-sign" }
   | { kind: "gate4-sign" }
   | { kind: "gate5-sign" }
   | { kind: "mapping-accept"; field: string }
   | { kind: "mapping-override"; field: string; correctedValue?: string; note?: string }
-  | { kind: "intake-override" };
+  | { kind: "intake-override" }
+  | { kind: "intake-doc-request" };
 
 function isGateSignKind(kind: GateAction["kind"]): kind is GateSignKind {
-  return kind === "gate2-sign" || kind === "gate3-sign" || kind === "gate4-sign" || kind === "gate5-sign";
+  return (
+    kind === "gate1-sign" ||
+    kind === "gate2-sign" ||
+    kind === "gate3-sign" ||
+    kind === "gate4-sign" ||
+    kind === "gate5-sign"
+  );
+}
+
+function mergeIntakeDocs(
+  baseDocs: IntakeDocRow[],
+  overrides: Record<string, IntakeDocOverride> | undefined,
+): IntakeDocRow[] {
+  if (!overrides) return baseDocs;
+  return baseDocs.map((doc) => {
+    const o = overrides[doc.name];
+    if (!o) return doc;
+    return { ...doc, ...o };
+  });
+}
+
+function intakeClassificationForDoc(doc: IntakeDocRow): string {
+  if (doc.classification) return doc.classification;
+  const walmartMatch = CASES.walmart.intakeDocs.find((d) => d.sopRef === doc.sopRef);
+  return walmartMatch?.classification ?? "Supporting Document";
+}
+
+function formatIntakeTimestamp(): string {
+  const d = new Date();
+  return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
 }
 
 function GateSignOffBar({
@@ -2271,10 +3000,24 @@ function GateSignOffBar({
       </Row>
     );
   }
+  if (mode === "gate1-sign") {
+    return (
+      <Row gap={8} wrap>
+        <Button variant="primary" disabled={disabled} onClick={() => onAction({ kind: "gate1-sign" })}>
+          Sign Gate 1 — Approve document set
+        </Button>
+        <Button variant="ghost" disabled={disabled} onClick={() => onAction({ kind: "intake-override" })}>
+          Override with reason (logged)
+        </Button>
+      </Row>
+    );
+  }
   if (mode === "intake-override") {
     return (
       <Row gap={8} wrap>
-            <Button variant="primary" onClick={() => onAction({ kind: "intake-override" })}>Send doc request reminder</Button>
+        <Button variant="primary" onClick={() => onAction({ kind: "intake-doc-request" })}>
+          Send doc request reminder
+        </Button>
         <Button variant="ghost" onClick={() => onAction({ kind: "intake-override" })}>
           Override with reason (logged)
         </Button>
@@ -2385,7 +3128,7 @@ function PortfolioBorrowerTable({
   openCase,
   theme,
 }: {
-  openCase: (id: CaseId, stage?: StageId) => void;
+  openCase: (id: CaseId, stage?: StageId, fromRow?: CaseRowData) => void;
   theme: FigmaTheme;
 }) {
   const rows: {
@@ -2452,6 +3195,20 @@ function PortfolioBorrowerTable({
 function makeAuditEvent(caseId: CaseId, action: GateAction): AuditEvent {
   const d = new Date();
   const now = `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+  if (action.kind === "gate1-sign") {
+    return {
+      id: `audit-${Date.now()}-gate1`,
+      caseId,
+      gateAction: "gate1-sign",
+      time: now,
+      stage: "Intake",
+      actorKind: "human",
+      actor: "J. Martinez (Credit Analyst)",
+      input: "9/9 documents validated per SOP §4.2 manifest",
+      reasoning: "Analyst signed Gate 1 after completeness check — Intake Agent released extraction pipeline",
+      output: "Gate 1 passed — Document Intelligence Agent queued",
+    };
+  }
   if (action.kind === "gate2-sign") {
     return {
       id: `audit-${Date.now()}-gate2`,
@@ -2538,6 +3295,19 @@ function makeAuditEvent(caseId: CaseId, action: GateAction): AuditEvent {
       output: `Override logged with reason and timestamp — audit ID trace-override-${Date.now()}`,
     };
   }
+  if (action.kind === "intake-doc-request") {
+    return {
+      id: `audit-${Date.now()}-docreq`,
+      caseId,
+      time: now,
+      stage: "Intake",
+      actorKind: "human",
+      actor: "J. Martinez (Credit Analyst)",
+      input: "Gate 1 blocked — doc request reminder sent to borrower portal",
+      reasoning: "Analyst requested missing Q3 cash flow, covenant schedule, and 5 additional items per SOP §4.2",
+      output: "Borrower notification queued — pipeline remains blocked until documents received",
+    };
+  }
   return {
     id: `audit-${Date.now()}-intake`,
     caseId,
@@ -2558,7 +3328,7 @@ function InSightAssistPanel({ theme, scope = "portfolio" }: { theme: FigmaTheme;
   const [chatInput, setChatInput] = useCanvasState<string>("insightAssistChat", "");
   const [chatReply, setChatReply] = useCanvasState<string>("insightAssistReply", "");
   const casesSummary =
-    "As of 09 Apr 2026: 8 active cases in queue. 3 flagged High Risk (AutoWest, Tesla Rental, Vantage). " +
+    "As of 09 Apr 2026: 9 active cases in queue. 4 flagged High Risk (AutoWest, Tesla Rental, Vantage, Northern Retail). " +
     "Extraction complete on 6/8; 2 awaiting document intake. Orchestrator recommends prioritizing covenant breaches.";
   const portfolioSummary =
     "The portfolio is showing signs of stress with 23 active covenant breaches, a +7 increase since last month. " +
@@ -2730,7 +3500,7 @@ function InFocusBanner({
 }: {
   rows: CaseRowData[];
   theme: FigmaTheme;
-  openCase: (id: CaseId, stage?: StageId) => void;
+  openCase: (id: CaseId, stage?: StageId, fromRow?: CaseRowData) => void;
 }) {
   const [open, setOpen] = useCanvasState<boolean>("inFocusOpen", true);
   if (!open) return null;
@@ -2741,11 +3511,6 @@ function InFocusBanner({
     if (r === "High Risk") return "deleted";
     if (r === "Moderate Risk") return "warning";
     return "success";
-  }
-
-  function caseForRow(id: string): { caseId: CaseId; stage: StageId } {
-    if (id.startsWith("WMT")) return { caseId: "walmart", stage: "review" };
-    return { caseId: "northern-retail", stage: "intake" };
   }
 
   return (
@@ -2768,7 +3533,7 @@ function InFocusBanner({
         </Row>
         <div style={{ display: "flex", gap: 12, overflowX: "auto" }}>
           {allHighlight.map((row) => {
-            const { caseId, stage } = caseForRow(row.id);
+            const { caseId, stage } = caseRouteForRowId(row.id);
             return (
               <div
                 key={row.id}
@@ -2780,7 +3545,7 @@ function InFocusBanner({
                   background: theme.bg.editor,
                   cursor: "pointer",
                 }}
-                onClick={() => openCase(caseId, stage)}
+                onClick={() => openCase(caseId, stage, row)}
               >
                 <Stack gap={6}>
                   <Row align="center" gap={6}>
@@ -2880,7 +3645,7 @@ function ExportDropdown({ theme, caseRef }: { theme: FigmaTheme; caseRef: string
     const mime = "text/plain;charset=utf-8";
     const body = isPdfDemo
       ? `[Demo PDF export — plain text placeholder]\nFinancial Spreading Export — ${caseRef}\nGenerated: ${new Date().toISOString()}\n`
-      : `Case,Stage,Confidence\n${caseRef},Review,99%\n`;
+      : `Case,Stage,Confidence\n${caseRef},Review,78%\n`;
     downloadExportFile(`${caseRef}.${ext}`, body, mime);
     setLastExport(`${format} · ${caseRef} · ${new Date().toLocaleTimeString()}`);
     setOpen(false);
@@ -3770,13 +4535,27 @@ function CreditMemoFullView({
 function PortfolioView({
   openCase,
   theme,
+  onOpenTrustLayer,
 }: {
-  openCase: (id: CaseId, stage?: StageId) => void;
+  openCase: (id: CaseId, stage?: StageId, fromRow?: CaseRowData) => void;
   theme: FigmaTheme;
+  onOpenTrustLayer?: () => void;
 }) {
   return (
     <Row gap={16} align="start">
       <Stack gap={16} style={{ flex: 1, minWidth: 0 }}>
+      <Callout tone="info" title="Commercial lending at portfolio scale">
+        Manual spreading hides covenant drift until quarter-end. Portfolio Sentinel Agent scanned the book overnight —
+        23 covenant breaches (+7 this month), 12 open exceptions flagged by Review Agent, 312 agent-hours saved across 42
+        cases. Every row below links trust status to gate-level evidence — one thread from alert to case.
+      </Callout>
+      {onOpenTrustLayer && (
+        <Row gap={8} align="center">
+          <Button variant="ghost" style={{ height: 26, fontSize: 11 }} onClick={onOpenTrustLayer}>
+            How the Trust Layer works →
+          </Button>
+        </Row>
+      )}
       <Grid columns={3} gap={12}>
         <FigmaKpiCard
           label="Agent auto-pass rate"
@@ -3846,6 +4625,8 @@ function PortfolioView({
       </Grid>
 
       <PortfolioBorrowerTable openCase={openCase} theme={theme} />
+
+      <InFocusBanner rows={CASE_ROWS} theme={theme} openCase={openCase} />
 
       <H2>Portfolio Sentinel alerts</H2>
       <Stack gap={8}>
@@ -3918,15 +4699,21 @@ function PortfolioView({
 function CommandCenterView({
   openCase,
   theme,
+  onOpenTrustLayer,
+  onOpenCreditPolicy,
 }: {
-  openCase: (id: CaseId, stage?: StageId) => void;
+  openCase: (id: CaseId, stage?: StageId, fromRow?: CaseRowData) => void;
   theme: FigmaTheme;
+  onOpenTrustLayer?: () => void;
+  onOpenCreditPolicy?: () => void;
 }) {
   return (
     <Stack gap={16}>
       <Callout tone="info" title="Since your last login">
         Agents processed 15 cases overnight · 3 need your review · Est. 28 min total
       </Callout>
+
+      <TrustLayerBanner theme={theme} onOpenTrustLayer={onOpenTrustLayer} onOpenCreditPolicy={onOpenCreditPolicy} />
 
       <Grid columns={3} gap={12}>
         <Stack gap={8}>
@@ -3941,13 +4728,14 @@ function CommandCenterView({
                 reviewMin="15 min"
                 stageLabel="Intake"
                 theme={theme}
+                trustNote="Intake Agent cited SOP §4.2 — agents stop; humans resolve completeness."
                 onViewStage={() => openCase("northern-retail", "intake")}
               />
             }
           >
             <AgentTag agentId="intake" theme={theme} />
             <Text size="small" tone="secondary">
-              Intake Agent blocked: 2 of 9 documents received. Missing Q3 cash flow, covenant schedule, and 4 more per SOP §4.2.
+              Intake Agent blocked: 2 of 9 documents received. Missing Q3 cash flow, covenant schedule, and 5 more per SOP §4.2.
             </Text>
             <Button variant="primary" onClick={() => openCase("northern-retail", "intake")}>
               Resolve completeness
@@ -3990,6 +4778,7 @@ function CommandCenterView({
                 reviewMin="12 min"
                 stageLabel="Review"
                 theme={theme}
+                trustNote="Mapping Agent did the spread — your Gate 2 sign-off releases Risk Agent."
                 onViewStage={() => openCase("walmart", "review")}
               />
             }
@@ -4029,24 +4818,34 @@ function CommandCenterView({
             title="Costco Wholesale"
             theme={theme}
             demoLabel="Synthetic portfolio queue — demo breadth"
-            trustFooter={<QueueTrustFooter gate="—" reviewMin="—" stageLabel="Extraction" theme={theme} />}
+            trustFooter={<QueueTrustFooter gate="—" reviewMin="—" stageLabel="Extraction" theme={theme}
+              onViewStage={() => openCase("walmart", "extraction")}
+            />}
           >
             <AgentTag agentId="document-intel" theme={theme} />
             <Text size="small" tone="secondary">
               Extracting 10-K filing (214 pages) · 67% complete
             </Text>
             <UsageBarPlaceholder theme={theme} pct={67} />
+            <Button variant="primary" onClick={() => openCase("walmart", "extraction")}>
+              Monitor extraction (Costco demo)
+            </Button>
           </DxpQueueCard>
           <DxpQueueCard
             title="Target Corp"
             theme={theme}
             demoLabel="Synthetic portfolio queue — demo breadth"
-            trustFooter={<QueueTrustFooter gate="—" reviewMin="—" stageLabel="Assessment" theme={theme} />}
+            trustFooter={<QueueTrustFooter gate="—" reviewMin="—" stageLabel="Assessment" theme={theme}
+              onViewStage={() => openCase("walmart", "assessment")}
+            />}
           >
             <AgentTag agentId="risk" theme={theme} />
             <Text size="small" tone="secondary">
               Running covenant analysis across 4 periods
             </Text>
+            <Button variant="primary" onClick={() => openCase("walmart", "assessment")}>
+              Monitor assessment (Target demo)
+            </Button>
           </DxpQueueCard>
         </Stack>
       </Grid>
@@ -4162,10 +4961,12 @@ function ActorChip({
 function TraceSection({
   title,
   items,
+  onOpenSop,
 }: {
   title: string;
   items: string[];
   theme: FigmaTheme;
+  onOpenSop?: (section: string, appliedTo?: string) => void;
 }) {
   return (
     <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
@@ -4180,7 +4981,7 @@ function TraceSection({
                 •
               </Text>
               <Text size="small" tone="secondary">
-                {item}
+                {onOpenSop ? renderTextWithSopLinks(item, onOpenSop) : item}
               </Text>
             </Row>
           </span>
@@ -4190,7 +4991,15 @@ function TraceSection({
   );
 }
 
-function StageTracePanel({ trace, theme }: { trace: StageTrace; theme: FigmaTheme }) {
+function StageTracePanel({
+  trace,
+  theme,
+  onOpenSop,
+}: {
+  trace: StageTrace;
+  theme: FigmaTheme;
+  onOpenSop?: (section: string, appliedTo?: string) => void;
+}) {
   const statusTone =
     trace.status === "complete"
       ? "success"
@@ -4235,9 +5044,9 @@ function StageTracePanel({ trace, theme }: { trace: StageTrace; theme: FigmaThem
         <Divider />
 
         <Row gap={16} align="start" wrap>
-          <TraceSection title="Input" items={trace.input} theme={theme as FigmaTheme} />
-          <TraceSection title="Reasoning" items={trace.reasoning} theme={theme as FigmaTheme} />
-          <TraceSection title="Output" items={trace.output} theme={theme as FigmaTheme} />
+          <TraceSection title="Input" items={trace.input} theme={theme as FigmaTheme} onOpenSop={onOpenSop} />
+          <TraceSection title="Reasoning" items={trace.reasoning} theme={theme as FigmaTheme} onOpenSop={onOpenSop} />
+          <TraceSection title="Output" items={trace.output} theme={theme as FigmaTheme} onOpenSop={onOpenSop} />
         </Row>
 
         {trace.gate && (
@@ -4338,11 +5147,14 @@ function ConnectorTrustPanel({
       <Stack gap={12}>
         <Row align="center" justify="space-between" wrap>
           <Stack gap={4}>
-            <Text weight="semibold" size="small">
-              Connector Trust Panel
-            </Text>
+            <Row gap={8} align="center">
+              <Text weight="semibold" size="small">
+                Connector Trust Panel
+              </Text>
+              <Pill tone="info">Trusted Sources</Pill>
+            </Row>
             <Text size="small" tone="tertiary">
-              {entitySummary}
+              {entitySummary} · authenticated API pulls with masked entity IDs in UI
             </Text>
           </Stack>
           <AgentTag agentId="connector" theme={theme} />
@@ -4459,14 +5271,16 @@ function CaseSwitcher({
   activeId,
   onChange,
   theme,
+  subtitles,
 }: {
   activeId: CaseId;
   onChange: (id: CaseId) => void;
   theme: FigmaTheme;
+  subtitles: Record<CaseId, string>;
 }) {
-  const items: { id: CaseId; label: string; sub: string }[] = [
-    { id: "walmart", label: "Walmart Inc.", sub: "Gate 2 · mapping review" },
-    { id: "northern-retail", label: "Northern Retail LLC", sub: "Gate 1 blocked · sad path" },
+  const items: { id: CaseId; label: string }[] = [
+    { id: "walmart", label: "Walmart Inc." },
+    { id: "northern-retail", label: "Northern Retail LLC" },
   ];
   return (
     <Row gap={8} wrap>
@@ -4493,7 +5307,7 @@ function CaseSwitcher({
                 {item.label}
               </Text>
               <Text size="small" tone="tertiary">
-                {item.sub}
+                {subtitles[item.id]}
               </Text>
             </Stack>
           </button>
@@ -4541,6 +5355,7 @@ function LifecycleRail({
             key={s.id}
             type="button"
             onClick={() => onSelect(s.id)}
+            aria-label={`${s.label} stage`}
             style={{
               textAlign: "left",
               padding: "8px 10px",
@@ -4616,12 +5431,14 @@ function TrustInspector({
   onClose,
   onAccept,
   onOverride,
+  onOpenSop,
 }: {
   row: MappingRow | null;
   theme: ReturnType<typeof useHostTheme>;
   onClose: () => void;
   onAccept?: (field: string) => void;
   onOverride?: (field: string, correctedValue: string, note: string) => void;
+  onOpenSop?: (section: string, appliedTo?: string) => void;
 }) {
   const [tab, setTab] = useCanvasState<TrustInspectorTab>("trustInspectorTab", "impact");
   const [correctedValue, setCorrectedValue] = useCanvasState<string>("trustInspectorCorrectedValue", "");
@@ -4638,6 +5455,10 @@ function TrustInspector({
   const impact = IMPACT_MAP[row.field];
 
   const handleApply = () => {
+    if (!correctedValue && !note) {
+      showActionToast("Enter a corrected value or note before applying");
+      return;
+    }
     onOverride?.(row.field, correctedValue || row.value, note);
     setCorrectedValue("");
     setNote("");
@@ -4662,6 +5483,9 @@ function TrustInspector({
       </CardHeader>
       <CardBody>
         <Stack gap={10}>
+          <Text size="small" tone="tertiary">
+            Intelligence Layer · per-field confidence, agent reasoning, and correction lineage before Gate 2
+          </Text>
           <Text weight="semibold">{row.field}</Text>
           <Row gap={8}>
             <Pill tone={cp.tone}>{cp.label}</Pill>
@@ -4682,7 +5506,15 @@ function TrustInspector({
               <Text size="small">{row.source}</Text>
             </Row>
           )}
-          {row.sop && (
+          {row.sop && onOpenSop && (
+            <Row justify="space-between">
+              <Text size="small" tone="secondary">
+                SOP reference
+              </Text>
+              <SopLink section={row.sop} appliedTo={row.field} onOpen={onOpenSop} testId="trust-inspector-sop-link" />
+            </Row>
+          )}
+          {row.sop && !onOpenSop && (
             <Row justify="space-between">
               <Text size="small" tone="secondary">
                 SOP reference
@@ -4816,10 +5648,13 @@ function TrustInspector({
             <Button variant="ghost" onClick={handleCancel}>
               Cancel
             </Button>
-            <Button variant="secondary" onClick={handleApply} disabled={!correctedValue && !note}>
+            <Button variant="secondary" onClick={handleApply}>
               Apply correction
             </Button>
           </Row>
+          <Text size="small" tone="quaternary">
+            Enter a corrected value and/or note to apply an override. Accept mapping if the agent value is correct.
+          </Text>
         </Stack>
       </CardBody>
     </Card>
@@ -4836,47 +5671,204 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
   const [lastCreatedLabel] = useCanvasState<string>("lastCreatedCaseLabel", "");
   const [savedAt, setSavedAt] = useCanvasState<string>("caseSavedAt", "");
   const [mappingSearch, setMappingSearch] = useCanvasState<string>("mappingFieldSearch", "");
-  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const [mappingPage, setMappingPage] = useCanvasState<number>("mappingPage", 0);
+  const [intakeDocOverrides, setIntakeDocOverrides] = useCanvasState<IntakeDocOverridesByCase>("intakeDocOverrides", {});
+  const [demoPortfolioContext] = useCanvasState<DemoPortfolioContext>("demoPortfolioContext", null);
+  const [portfolioBannerDismissed, setPortfolioBannerDismissed] = useCanvasState<boolean>("portfolioBannerDismissed", false);
+  const [, setSopViewer] = useCanvasState<{ section: string; appliedTo?: string } | null>("sopViewerOpen", null);
+
+  const openSop = useCallback((section: string, appliedTo?: string) => {
+    setSopViewer({ section, appliedTo });
+  }, [setSopViewer]);
 
   const caseDef = CASES[caseId];
+  const mergedIntakeDocs = mergeIntakeDocs(caseDef.intakeDocs, intakeDocOverrides[caseId]);
+  const receivedCount = mergedIntakeDocs.filter((d) => d.received).length;
+  const totalIntakeDocs = mergedIntakeDocs.length;
+
   const caseAudit = auditAppend.filter((e) => e.caseId === caseId);
   const signedGateActions = new Set(
     caseAudit.map((e) => e.gateAction).filter((g): g is GateSignKind => g != null),
   );
+  const gate1Signed = signedGateActions.has("gate1-sign");
+  const isNorthern = caseId === "northern-retail";
+  const northernPipelineUnlocked = isNorthern && gate1Signed && receivedCount === totalIntakeDocs;
+  const memoSadPath = isNorthern && !northernPipelineUnlocked;
+  const memoContent = isNorthern && northernPipelineUnlocked ? CASES.walmart : caseDef;
+  const spreadMappingData = northernPipelineUnlocked ? CASES.walmart.mappingData : caseDef.mappingData;
+
+  const acceptedFields = new Set(
+    caseAudit.flatMap((e) => {
+      const resolved: string[] = [];
+      if (e.output.includes("Accepted mapping")) {
+        const match = e.input.match(/Field: (.+?) —/);
+        if (match?.[1]) resolved.push(match[1]);
+      }
+      if (e.input.includes("Override") || e.input.includes("corrected")) {
+        for (const row of spreadMappingData) {
+          if (row.confidence === "review" && e.input.includes(row.field)) {
+            resolved.push(row.field);
+          }
+        }
+      }
+      return resolved;
+    }),
+  );
+  const reviewExceptionCount = spreadMappingData.filter((r) => r.confidence === "review").length;
+  const remainingExceptions = Math.max(0, reviewExceptionCount - acceptedFields.size);
+  const progress = deriveCaseProgress(caseDef, caseId, signedGateActions, remainingExceptions, {
+    receivedCount,
+    totalDocs: totalIntakeDocs,
+    northernUnlocked: northernPipelineUnlocked,
+  });
+
+  const walmartAudit = auditAppend.filter((e) => e.caseId === "walmart");
+  const walmartSigned = new Set(
+    walmartAudit.map((e) => e.gateAction).filter((g): g is GateSignKind => g != null),
+  );
+  const walmartAccepted = new Set(
+    walmartAudit.flatMap((e) => {
+      const resolved: string[] = [];
+      if (e.output.includes("Accepted mapping")) {
+        const match = e.input.match(/Field: (.+?) —/);
+        if (match?.[1]) resolved.push(match[1]);
+      }
+      return resolved;
+    }),
+  );
+  const walmartExceptions = Math.max(
+    0,
+    CASES.walmart.mappingData.filter((r) => r.confidence === "review").length - walmartAccepted.size,
+  );
+  const northernAudit = auditAppend.filter((e) => e.caseId === "northern-retail");
+  const northernSigned = new Set(
+    northernAudit.map((e) => e.gateAction).filter((g): g is GateSignKind => g != null),
+  );
+  const northernMergedDocs = mergeIntakeDocs(
+    CASES["northern-retail"].intakeDocs,
+    intakeDocOverrides["northern-retail"],
+  );
+  const northernReceived = northernMergedDocs.filter((d) => d.received).length;
+  const northernUnlockedForSwitcher =
+    northernSigned.has("gate1-sign") && northernReceived === northernMergedDocs.length;
+  const northernProgress = deriveCaseProgress(
+    CASES["northern-retail"],
+    "northern-retail",
+    northernSigned,
+    walmartExceptions,
+    {
+      receivedCount: northernReceived,
+      totalDocs: northernMergedDocs.length,
+      northernUnlocked: northernUnlockedForSwitcher,
+    },
+  );
+  const walmartProgress = deriveCaseProgress(CASES.walmart, "walmart", walmartSigned, walmartExceptions);
+  const caseSwitcherSubtitles: Record<CaseId, string> = {
+    walmart: walmartProgress.gateLabel,
+    "northern-retail": northernProgress.gateLabel,
+  };
+
+  const markDocReceived = useCallback(
+    (docName: string) => {
+      const doc = mergedIntakeDocs.find((d) => d.name === docName);
+      if (!doc || doc.received) return;
+      const now = formatIntakeTimestamp();
+      setIntakeDocOverrides((prev) => ({
+        ...prev,
+        [caseId]: {
+          ...(prev[caseId] ?? {}),
+          [docName]: {
+            received: true,
+            uploadedBy: "J. Martinez (Credit Analyst)",
+            uploadedOn: now,
+            sizeKb: 240 + Math.floor(Math.random() * 400),
+            classification: intakeClassificationForDoc(doc),
+          },
+        },
+      }));
+      const nextCount = receivedCount + 1;
+      showActionToast(
+        `${docName} received — ${nextCount}/${totalIntakeDocs} documents per SOP §4.2`,
+      );
+    },
+    [caseId, mergedIntakeDocs, receivedCount, setIntakeDocOverrides, totalIntakeDocs],
+  );
+
+  const markNextMissingDoc = useCallback(() => {
+    const nextMissing = mergedIntakeDocs.find((d) => !d.received);
+    if (!nextMissing) {
+      showActionToast("All documents already received");
+      return;
+    }
+    markDocReceived(nextMissing.name);
+  }, [markDocReceived, mergedIntakeDocs]);
+
+  useEffect(() => {
+    setMappingPage(0);
+  }, [mappingSearch, detailTab, setMappingPage]);
+
   const mergedLog: RuntimeLogEntry[] = [...caseDef.runtimeLog, ...caseAudit];
   const newEntryIds = new Set(caseAudit.map((e) => e.id));
   const activeTrace = caseDef.traces[stageId];
-  const selectedRow = caseDef.mappingData.find((r) => r.field === selectedField) ?? null;
+  const selectedRow = spreadMappingData.find((r) => r.field === selectedField) ?? null;
   const mappingQuery = mappingSearch.trim().toLowerCase();
-  const filteredMapping = caseDef.mappingData.filter(
+  const filteredMapping = spreadMappingData.filter(
     (r) =>
       mappingQuery === "" ||
       r.field.toLowerCase().includes(mappingQuery) ||
       r.value.toLowerCase().includes(mappingQuery),
   );
-  const isNorthern = caseId === "northern-retail";
-  const receivedCount = caseDef.intakeDocs.filter((d) => d.received).length;
-
+  const mappingPageCount = Math.max(1, Math.ceil(filteredMapping.length / MAPPING_PAGE_SIZE));
+  const safeMappingPage = Math.min(mappingPage, mappingPageCount - 1);
+  const pagedMapping = filteredMapping.slice(
+    safeMappingPage * MAPPING_PAGE_SIZE,
+    safeMappingPage * MAPPING_PAGE_SIZE + MAPPING_PAGE_SIZE,
+  );
   const appendAudit = (action: GateAction) => {
     if (isGateSignKind(action.kind)) {
-      setAuditAppend((prev) => {
-        const alreadySigned = prev.some((e) => e.caseId === caseId && e.gateAction === action.kind);
-        if (alreadySigned) {
-          showActionToast("This gate was already signed in this session");
-          return prev;
+      const alreadySigned = signedGateActions.has(action.kind);
+      if (alreadySigned) {
+        showActionToast("This gate was already signed in this session");
+        return;
+      }
+      if (action.kind === "gate1-sign") {
+        if (receivedCount < totalIntakeDocs) {
+          showActionToast("All 9 documents required before signing Gate 1");
+          return;
         }
         const event = makeAuditEvent(caseId, action);
-        if (action.kind === "gate2-sign") showActionToast("Gate 2 signed — mapping approved");
-        else if (action.kind === "gate3-sign") showActionToast("Gate 3 signed — risk assessment approved");
-        else if (action.kind === "gate4-sign") showActionToast("Gate 4 signed — credit memo approved");
-        else if (action.kind === "gate5-sign") showActionToast("Gate 5 signed — committee decision recorded");
-        return [...prev, event];
-      });
+        setAuditAppend((prev) => [...prev, event]);
+        showActionToast("Gate 1 signed — pipeline unlocked for extraction");
+        setStageId("extraction");
+        return;
+      }
+      if (action.kind === "gate2-sign" && remainingExceptions > 0) {
+        showActionToast("Resolve mapping exceptions before signing Gate 2");
+        setStageId("review");
+        setDetailTab("exceptions");
+        return;
+      }
+      const event = makeAuditEvent(caseId, action);
+      setAuditAppend((prev) => [...prev, event]);
+      if (action.kind === "gate2-sign") {
+        showActionToast("Gate 2 signed — Risk Agent released for assessment");
+        setStageId("assessment");
+        setDetailTab("extracted");
+      } else if (action.kind === "gate3-sign") {
+        showActionToast("Gate 3 signed — Memo Composer released");
+        setStageId("memo");
+      } else if (action.kind === "gate4-sign") {
+        showActionToast("Gate 4 signed — Decision Synthesis released");
+        setStageId("decision");
+      } else if (action.kind === "gate5-sign") {
+        showActionToast("Gate 5 signed — committee decision recorded");
+      }
       return;
     }
     const event = makeAuditEvent(caseId, action);
     setAuditAppend((prev) => [...prev, event]);
     if (action.kind === "intake-override") showActionToast("Intake override logged to audit trail");
+    else if (action.kind === "intake-doc-request") showActionToast("Doc request reminder sent — pipeline remains blocked");
     else if (action.kind === "mapping-accept") showActionToast(`Accepted mapping for ${action.field}`);
     else if (action.kind === "mapping-override") showActionToast("Override logged with reason and timestamp");
   };
@@ -4888,19 +5880,27 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
     setMappingSearch("");
   };
 
-  const pipelineSteps: PipelineStep[] = isNorthern
-    ? [
-        { label: "Ingestion", status: "done" },
-        { label: "Extractions", status: "blocked", badge: 7 },
-        { label: "Output", status: "pending", badge: 3 },
-        { label: "Health", status: "pending", badge: 4 },
-      ]
-    : [
-        { label: "Ingestion", status: "done" },
-        { label: "Extractions", status: "done" },
-        { label: "Output", status: "active", badge: 2 },
-        { label: "Health", status: "pending", badge: 4 },
-      ];
+  const pipelineSteps: PipelineStep[] =
+    isNorthern && !northernPipelineUnlocked
+      ? [
+          { label: "Ingestion", status: "done" },
+          { label: "Extractions", status: "blocked", badge: totalIntakeDocs - receivedCount },
+          { label: "Output", status: "pending", badge: 3 },
+          { label: "Health", status: "pending", badge: 4 },
+        ]
+      : [
+          { label: "Ingestion", status: "done" },
+          { label: "Extractions", status: "done" },
+          { label: "Output", status: "active", badge: 2 },
+          { label: "Health", status: "pending", badge: 4 },
+        ];
+
+  const showReviewWorkspace = stageId === "review" && (!isNorthern || northernPipelineUnlocked);
+  const showAssessmentWorkspace = stageId === "assessment" && (!isNorthern || northernPipelineUnlocked);
+  const showMemoWorkspace = stageId === "memo";
+  const showDecisionWorkspace = stageId === "decision" && (!isNorthern || northernPipelineUnlocked);
+  const showExtractionMapping =
+    (stageId === "extraction" || stageId === "mapping") && (!isNorthern || northernPipelineUnlocked);
 
   return (
     <Stack gap={12}>
@@ -4917,7 +5917,36 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
           Intake Agent queued document validation for {lastCreatedLabel}. Demo opens the nearest matching workspace template.
         </Callout>
       )}
-      <CaseSwitcher activeId={caseId} onChange={switchCase} theme={theme} />
+      <CaseSwitcher
+        activeId={caseId}
+        onChange={switchCase}
+        theme={theme}
+        subtitles={caseSwitcherSubtitles}
+      />
+
+      {demoPortfolioContext && !portfolioBannerDismissed && (
+        <Callout tone="info" title={`Portfolio drill-down: ${demoPortfolioContext.entity}`}>
+          <Row align="center" justify="space-between" wrap gap={8}>
+            <Text size="small">
+              Workspace uses Walmart spread template for demo depth — concern: {demoPortfolioContext.concern}
+            </Text>
+            <Button
+              variant="ghost"
+              style={{ height: 26, fontSize: 11 }}
+              data-testid="dismiss-portfolio-banner"
+              onClick={() => setPortfolioBannerDismissed(true)}
+            >
+              Dismiss
+            </Button>
+          </Row>
+        </Callout>
+      )}
+
+      {northernPipelineUnlocked && stageId === "review" && (
+        <Callout tone="info" title="Spreading template">
+          Spreading template: Walmart FY2025 10-K (Northern Retail intake complete)
+        </Callout>
+      )}
 
       <div style={{ ...dxpCard(theme), padding: 0, overflow: "hidden" }}>
         {/* Case header bar */}
@@ -4969,8 +5998,8 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
               { label: "Case ID", value: isNorthern ? "NRTL-REV-2025" : "WMT-TLB-2025" },
               { label: "Case / Trigger Type", value: isNorthern ? "Revolving Credit" : "New Loan" },
               { label: "SLA", value: isNorthern ? "Blocked" : "2 hrs remaining" },
-              { label: "Status", value: isNorthern ? "Blocked" : "In Progress" },
-              { label: "Extraction Confidence", value: isNorthern ? "2/9 docs" : "99%" },
+              { label: "Status", value: isNorthern && !northernPipelineUnlocked ? "Blocked" : progress.statusLabel },
+              { label: "Extraction Confidence", value: isNorthern && !northernPipelineUnlocked ? `${receivedCount}/${totalIntakeDocs} docs` : "78%" },
               { label: "Risk", value: isNorthern ? "High Risk" : "Low Risk" },
               { label: "Normalization", value: isNorthern ? "Pending" : "Balanced" },
             ].map((item) => (
@@ -4993,24 +6022,40 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
             <Row align="center" wrap gap={8}>
               <AgentTag agentId="orchestrator" theme={theme} />
               <Text size="small" tone="tertiary">
-                Orchestrator: {caseDef.orchestratorStatus}
+                Orchestrator: {progress.orchestratorStatus}
               </Text>
               <Spacer />
-              <Pill tone={caseDef.gateTone}>{caseDef.gateLabel}</Pill>
+              <Pill tone={progress.gateTone}>{progress.gateLabel}</Pill>
             </Row>
-            <CaseTrustStrip caseDef={caseDef} auditCount={caseAudit.length} theme={theme} />
-            <Callout tone={isNorthern ? "warning" : "info"} title={caseDef.briefingTitle}>
+            <CaseTrustStrip
+              caseDef={caseDef}
+              auditCount={caseAudit.length}
+              theme={theme}
+              openExceptions={remainingExceptions}
+              caseId={caseId}
+              gateLabel={progress.gateLabel}
+              gateTone={progress.gateTone}
+            />
+            <Callout
+              tone={isNorthern ? "warning" : "info"}
+              title={isNorthern ? "Agents stopped — humans govern" : "Agents did the work — you approve"}
+            >
               {caseDef.briefingBody}
             </Callout>
             <Row gap={8} align="center" wrap>
               <Text size="small" weight="semibold">Next best action:</Text>
-              <Text size="small">{caseDef.nextBestAction}</Text>
+              <Text size="small">{progress.nextBestAction}</Text>
               <Button
                 variant="primary"
                 style={{ height: 28, fontSize: 12, borderRadius: 4 }}
-                onClick={() => setStageId(caseDef.defaultStage)}
+                onClick={() => {
+                  setStageId(progress.primaryStage);
+                  if (progress.primaryStage === "review" && remainingExceptions > 0) {
+                    setDetailTab("exceptions");
+                  }
+                }}
               >
-                {caseDef.primaryCta}
+                {progress.primaryCta}
               </Button>
             </Row>
           </Stack>
@@ -5021,7 +6066,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
         <LifecycleRail traces={caseDef.traces} activeId={stageId} onSelect={setStageId} theme={theme} />
 
         <Stack gap={12} style={{ flex: 1, minWidth: 0 }}>
-          <StageTracePanel trace={activeTrace} theme={theme} />
+          <StageTracePanel trace={activeTrace} theme={theme} onOpenSop={openSop} />
 
           <Text weight="semibold" size="small">
             Stage workspace
@@ -5031,40 +6076,52 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
               <Stack gap={12}>
                 <Row align="center" justify="space-between">
                   <Text weight="semibold" size="small">
-                    Documents Uploaded ({receivedCount}/{caseDef.intakeDocs.length})
+                    Documents Uploaded ({receivedCount}/{totalIntakeDocs})
                   </Text>
                   <Row gap={8} align="center">
                     <AgentTag agentId="intake" theme={theme} />
-                    <input
-                      ref={uploadInputRef}
-                      type="file"
-                      accept=".pdf,.xlsx,.csv"
-                      style={{ display: "none" }}
-                      onChange={() => showActionToast("Document queued — Intake Agent will OCR and validate against SOP §4.2")}
-                    />
                     <Button
                       variant="ghost"
                       style={{ height: 26, fontSize: 11 }}
-                      onClick={() => uploadInputRef.current?.click()}
+                      data-testid="intake-upload-button"
+                      onClick={() => markNextMissingDoc()}
                     >
                       ↑ Upload
                     </Button>
                   </Row>
                 </Row>
-                {isNorthern ? (
-                  <Callout tone="warning" title="Gate 1 blocked — 7 documents missing">
+                {!isNorthern && (
+                  <Row gap={8} align="center">
+                    <Button
+                      variant="ghost"
+                      style={{ height: 26, fontSize: 11 }}
+                      data-testid="view-sop-manifest"
+                      onClick={() => openSop("§4.2", "Required document manifest")}
+                    >
+                      View SOP §4.2 manifest
+                    </Button>
+                  </Row>
+                )}
+                {isNorthern && !gate1Signed && receivedCount < totalIntakeDocs && (
+                  <Callout tone="warning" title={`Gate 1 blocked — ${totalIntakeDocs - receivedCount} documents missing`}>
                     Intake Agent cannot release extraction. EIN captured from credit application — Connector
                     Agent ran preliminary AML entity screen; full bureau + guarantor SSN KYC deferred.
                   </Callout>
-                ) : (
+                )}
+                {isNorthern && !gate1Signed && receivedCount === totalIntakeDocs && (
+                  <Callout tone="info" title="All documents received — Gate 1 sign-off required">
+                    Intake Agent validated 9/9 documents per SOP §4.2. Sign Gate 1 to release extraction pipeline.
+                  </Callout>
+                )}
+                {(gate1Signed || (!isNorthern && receivedCount === totalIntakeDocs)) && (
                   <Callout tone="success" title="Gate 1 passed">
                     Intake Agent validated 9/9 documents per SOP §4.2. EIN captured → Connector Agent synced
                     Experian, Equifax, D&B, and AML/KYC APIs in parallel.
                   </Callout>
                 )}
                 <Table
-                  headers={["Document", "Classification", "SOP ref", "Status", "Uploaded By", "Uploaded On", "Size"]}
-                  rows={caseDef.intakeDocs.map((doc) => [
+                  headers={["Document", "Classification", "SOP ref", "Status", "Uploaded By", "Uploaded On", "Size", ""]}
+                  rows={mergedIntakeDocs.map((doc) => [
                     <Row gap={6} align="center">
                       <span style={{ fontSize: 13 }}>📄</span>
                       <Text size="small" weight="semibold">{doc.name}</Text>
@@ -5074,7 +6131,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                     ) : (
                       <Text size="small" tone="quaternary">—</Text>
                     ),
-                    doc.sopRef,
+                    <SopLink section={doc.sopRef} appliedTo={doc.name} onOpen={openSop} />,
                     doc.received ? (
                       <ExtractedBadge theme={theme} />
                     ) : (
@@ -5083,11 +6140,31 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                     doc.uploadedBy ?? "—",
                     doc.uploadedOn ?? "—",
                     doc.sizeKb ? `${(doc.sizeKb / 1024).toFixed(1)} MB` : "—",
+                    !doc.received ? (
+                      <Button
+                        variant="ghost"
+                        style={{ height: 24, fontSize: 10 }}
+                        data-testid={`mark-received-${doc.name.replace(/\s+/g, "-").toLowerCase()}`}
+                        onClick={() => markDocReceived(doc.name)}
+                      >
+                        Mark received (demo)
+                      </Button>
+                    ) : (
+                      <Text size="small" tone="quaternary">—</Text>
+                    ),
                   ])}
-                  rowTone={caseDef.intakeDocs.map((d) => (d.received ? "success" : "danger"))}
+                  rowTone={mergedIntakeDocs.map((d) => (d.received ? "success" : "danger"))}
                   striped
                 />
-                {isNorthern && (
+                {isNorthern && !gate1Signed && receivedCount === totalIntakeDocs && (
+                  <GateSignOffBar
+                    mode="gate1-sign"
+                    theme={theme}
+                    disabled={gate1Signed}
+                    onAction={(action) => appendAudit(action)}
+                  />
+                )}
+                {isNorthern && !gate1Signed && receivedCount < totalIntakeDocs && (
                   <GateSignOffBar
                     mode="intake-override"
                     theme={theme}
@@ -5098,7 +6175,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
             </div>
           )}
 
-          {stageId === "review" && !isNorthern && (
+          {showReviewWorkspace && (
             <>
               <div
                 style={{
@@ -5113,16 +6190,22 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                     active={detailTab}
                     onChange={setDetailTab}
                     theme={theme}
-                    counts={{ extracted: 140, exceptions: 1, corrected: 0, normalized: NORMALIZED_VALUES.length }}
+                    counts={{
+                      extracted: spreadMappingData.length,
+                      exceptions: spreadMappingData.filter((r) => r.confidence === "review").length,
+                      corrected: caseAudit.filter(
+                        (e) =>
+                          e.input.includes("Override") ||
+                          e.input.includes("corrected") ||
+                          e.output.includes("Accepted mapping"),
+                      ).length,
+                      normalized: NORMALIZED_VALUES.length,
+                    }}
                   />
                   <Button
                     variant="primary"
                     style={{ height: 28, fontSize: 11, margin: "0 12px", flexShrink: 0 }}
-                    onClick={() => {
-                      setDetailTab("extracted");
-                      setSelectedField("Total Assets");
-                      showActionToast("Spread workspace active — extracted values panel");
-                    }}
+                    onClick={() => setMemoOpen(true)}
                   >
                     Launch Spread ↗
                   </Button>
@@ -5159,35 +6242,72 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                   <CasePdfPane theme={theme} />
                   <Stack gap={0} style={{ flex: 1, padding: 16, minWidth: 0 }}>
                     {detailTab === "extracted" && (
-                      <Table
-                        headers={["Field", "Value", "Status", "Confidence", "Agent", ""]}
-                        rows={filteredMapping.map((r) => {
-                          const cp = confidencePill(r.confidence);
-                          return [
-                            r.field,
-                            r.value,
-                            <ExtractedBadge theme={theme} />,
-                            <FigmaConfidenceBadge level={r.confidence} label={cp.label} theme={theme} />,
-                            <AgentTag agentId={r.agentId} theme={theme} />,
-                            <Button variant="ghost" onClick={() => setSelectedField(r.field)}>
-                              Inspect
-                            </Button>,
-                          ];
-                        })}
-                        rowTone={filteredMapping.map((r) =>
-                          r.confidence === "review" ? "warning" : r.confidence === "high" ? "success" : "neutral"
+                      <Stack gap={8}>
+                        <Table
+                          headers={["Field", "Value", "Status", "Confidence", "Agent", ""]}
+                          rows={pagedMapping.map((r) => {
+                            const cp = confidencePill(r.confidence);
+                            return [
+                              r.field,
+                              r.value,
+                              <ExtractedBadge theme={theme} />,
+                              <FigmaConfidenceBadge level={r.confidence} label={cp.label} theme={theme} />,
+                              <AgentTag agentId={r.agentId} theme={theme} />,
+                              <Button variant="ghost" onClick={() => setSelectedField(r.field)}>
+                                Inspect
+                              </Button>,
+                            ];
+                          })}
+                          rowTone={pagedMapping.map((r) =>
+                            r.confidence === "review" ? "warning" : r.confidence === "high" ? "success" : "neutral",
+                          )}
+                          striped
+                        />
+                        {filteredMapping.length > MAPPING_PAGE_SIZE && (
+                          <Row align="center" justify="space-between">
+                            <Text size="small" tone="tertiary">
+                              Showing {safeMappingPage * MAPPING_PAGE_SIZE + 1}–
+                              {Math.min((safeMappingPage + 1) * MAPPING_PAGE_SIZE, filteredMapping.length)} of{" "}
+                              {filteredMapping.length} fields
+                            </Text>
+                            <Row gap={8}>
+                              <Button
+                                variant="ghost"
+                                style={{ height: 26, fontSize: 11 }}
+                                disabled={safeMappingPage === 0}
+                                onClick={() => setMappingPage(Math.max(0, safeMappingPage - 1))}
+                              >
+                                ← Prev
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                style={{ height: 26, fontSize: 11 }}
+                                disabled={safeMappingPage >= mappingPageCount - 1}
+                                onClick={() => setMappingPage(Math.min(mappingPageCount - 1, safeMappingPage + 1))}
+                              >
+                                Next →
+                              </Button>
+                            </Row>
+                          </Row>
                         )}
-                        striped
-                      />
+                      </Stack>
                     )}
                     {detailTab === "exceptions" && (
                       <Stack gap={8}>
-                        <Callout tone="warning" title="Review Agent exception">
-                          Total Assets $100K — FY2024 was $98M; industry median $120M. Likely decimal error on p.43.
-                        </Callout>
-                        <Button variant="primary" onClick={() => setSelectedField("Total Assets")}>
-                          Open Trust Inspector
-                        </Button>
+                        {remainingExceptions === 0 ? (
+                          <Callout tone="success" title="All exceptions resolved">
+                            Mapping exceptions cleared. Sign Gate 2 below to release Risk Agent.
+                          </Callout>
+                        ) : (
+                          <>
+                            <Callout tone="warning" title="Review Agent exception">
+                              Total Assets $100K — FY2024 was $98M; industry median $120M. Likely decimal error on p.43.
+                            </Callout>
+                            <Button variant="primary" onClick={() => setSelectedField("Total Assets")}>
+                              Open Trust Inspector
+                            </Button>
+                          </>
+                        )}
                       </Stack>
                     )}
                     {detailTab === "corrected" && (
@@ -5244,6 +6364,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                   row={selectedRow}
                   theme={theme}
                   onClose={() => setSelectedField(null)}
+                  onOpenSop={openSop}
                   onAccept={(field) => {
                     appendAudit({ kind: "mapping-accept", field });
                     setSelectedField(null);
@@ -5256,7 +6377,14 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
               )}
               <ValidateRatiosPanel
                 theme={theme}
-                onMarkComplete={() => showActionToast("Ratio validation marked complete — sign Gate 2 when ready")}
+                onMarkComplete={() => {
+                  showActionToast(
+                    remainingExceptions > 0
+                      ? "Ratios validated — resolve Total Assets exception, then sign Gate 2"
+                      : "Ratios validated — sign Gate 2 below to release Risk Agent",
+                  );
+                  if (remainingExceptions > 0) setDetailTab("exceptions");
+                }}
               />
               <Card>
                 <CardHeader trailing={<AgentTag agentId="mapping" theme={theme} />}>
@@ -5264,7 +6392,9 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                 </CardHeader>
                 <CardBody>
                   <Callout tone="warning" title="Human Gate 2 required">
-                    Review Agent has flagged {caseDef.openExceptions} exception(s). Resolve then sign off to release Risk Agent for ratio calculation.
+                    {remainingExceptions > 0
+                      ? `Review Agent flagged ${remainingExceptions} exception(s). Accept or correct on Exceptions tab, then sign off to release Risk Agent.`
+                      : "Exceptions cleared. Sign off to release Risk Agent for ratio calculation."}
                   </Callout>
                   <GateSignOffBar
                     mode="gate2-sign"
@@ -5277,7 +6407,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
             </>
           )}
 
-          {isNorthern && stageId !== "intake" && stageId !== "memo" && stageId !== "decision" && (
+          {isNorthern && !northernPipelineUnlocked && stageId !== "intake" && stageId !== "memo" && (
             <div style={dxpCard(theme)}>
               <Callout tone="warning" title="Pipeline held by Orchestrator">
                 This stage has not started. Gate 1 is blocked on incomplete documents — see Intake stage trace for
@@ -5286,7 +6416,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
             </div>
           )}
 
-          {!isNorthern && stageId === "assessment" && (
+          {showAssessmentWorkspace && (
             <Stack gap={12}>
               <RiskFormulaPanel theme={theme} />
               <Card>
@@ -5308,45 +6438,43 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
             </Stack>
           )}
 
-          {!isNorthern && stageId === "memo" && (
+          {showMemoWorkspace && (
             <Stack gap={12}>
               <ConnectorTrustPanel
-                feeds={caseDef.connectorFeeds}
-                entitySummary={caseDef.entitySummary}
+                feeds={memoContent.connectorFeeds}
+                entitySummary={memoContent.entitySummary}
                 theme={theme}
               />
-              <CreditMemoPreview sections={caseDef.memoSections} theme={theme} />
-              <Card>
-                <CardHeader trailing={<AgentTag agentId="memo" theme={theme} />}>
-                  Gate 4 — Memo coherence review
-                </CardHeader>
-                <CardBody>
-                  <Callout tone="info" title="Memo draft ready for review">
-                    Memo Composer Agent has drafted all sections. Connector citations verified. Gate 4 sign-off releases Decision Synthesis Agent for committee package.
-                  </Callout>
-                  <GateSignOffBar
-                    mode="gate4-sign"
-                    theme={theme}
-                    disabled={signedGateActions.has("gate4-sign")}
-                    onAction={(action) => appendAudit(action)}
-                  />
-                </CardBody>
-              </Card>
+              <CreditMemoPreview sections={memoContent.memoSections} theme={theme} />
+              {memoSadPath ? (
+                <Callout tone="warning" title="Memo blocked — intake incomplete">
+                  Connector Agent ran preliminary AML on EIN. Bureau and guarantor SSN KYC blocked — intake
+                  incomplete. Connectors respect pipeline gates; full memo generates after Gate 1 and document set
+                  completion.
+                </Callout>
+              ) : (
+                <Card>
+                  <CardHeader trailing={<AgentTag agentId="memo" theme={theme} />}>
+                    Gate 4 — Memo coherence review
+                  </CardHeader>
+                  <CardBody>
+                    <Callout tone="info" title="Memo draft ready for review">
+                      Memo Composer Agent has drafted all sections. Connector citations verified. Gate 4 sign-off
+                      releases Decision Synthesis Agent for committee package.
+                    </Callout>
+                    <GateSignOffBar
+                      mode="gate4-sign"
+                      theme={theme}
+                      disabled={signedGateActions.has("gate4-sign")}
+                      onAction={(action) => appendAudit(action)}
+                    />
+                  </CardBody>
+                </Card>
+              )}
             </Stack>
           )}
 
-          {isNorthern && stageId === "memo" && (
-            <Stack gap={12}>
-              <ConnectorTrustPanel
-                feeds={caseDef.connectorFeeds}
-                entitySummary={caseDef.entitySummary}
-                theme={theme}
-              />
-              <CreditMemoPreview sections={caseDef.memoSections} theme={theme} />
-            </Stack>
-          )}
-
-          {!isNorthern && stageId === "decision" && (
+          {showDecisionWorkspace && (
             <Stack gap={12}>
               <DecisionRationalePanel theme={theme} />
               <Card>
@@ -5375,16 +6503,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
             </Stack>
           )}
 
-          {isNorthern && stageId === "decision" && (
-            <div style={dxpCard(theme)}>
-              <Callout tone="warning" title="Decision stage not available">
-                Decision Agent requires approved memo with complete connector bundle. Resolve Gate 1 intake
-                block first.
-              </Callout>
-            </div>
-          )}
-
-          {!isNorthern && (stageId === "extraction" || stageId === "mapping") && (
+          {showExtractionMapping && (
             <StageActivityCard
               stageId={stageId}
               theme={theme}
@@ -5570,7 +6689,7 @@ function RowActionMenu({
 }: {
   row: CaseRowData;
   theme: FigmaTheme;
-  openCase: (id: CaseId, stage?: StageId) => void;
+  openCase: (id: CaseId, stage?: StageId, fromRow?: CaseRowData) => void;
   caseId: CaseId;
   stage: StageId;
 }) {
@@ -5606,7 +6725,7 @@ function RowActionMenu({
           }}
         >
           {[
-            { label: "Open case", fn: () => openCase(caseId, stage) },
+            { label: "Open case", fn: () => openCase(caseId, stage, row) },
             {
               label: "Export row",
               fn: () => {
@@ -5650,24 +6769,13 @@ function CreateCaseDialog({
 }: {
   theme: FigmaTheme;
   onClose: () => void;
-  openCase: (id: CaseId, stage?: StageId) => void;
+  openCase: (id: CaseId, stage?: StageId, fromRow?: CaseRowData) => void;
 }) {
   const [entity, setEntity] = useCanvasState<string>("newCaseEntity", "");
   const [trigger, setTrigger] = useCanvasState<string>("newCaseTrigger", "New Loan");
   const [, setLastCreatedLabel] = useCanvasState<string>("lastCreatedCaseLabel", "");
 
-  const targetStage: StageId =
-    trigger === "Covenant Breach"
-      ? "assessment"
-      : trigger === "Monthly Review" || trigger === "Annual Review"
-        ? "review"
-        : "intake";
-  const submitLabel =
-    targetStage === "assessment"
-      ? "Create & open assessment"
-      : targetStage === "review"
-        ? "Create & open review"
-        : "Create & open intake";
+  const submitLabel = "Create & open intake";
 
   return (
     <div
@@ -5745,8 +6853,9 @@ function CreateCaseDialog({
                 setLastCreatedLabel(label);
                 setEntity("");
                 onClose();
-                const target: CaseId = label.toLowerCase().includes("walmart") ? "walmart" : "northern-retail";
-                openCase(target, targetStage);
+                const target: CaseId =
+                  label.toLowerCase().includes("northern") ? "northern-retail" : "walmart";
+                openCase(target, "intake");
               }}
             >
               {submitLabel}
@@ -5761,9 +6870,12 @@ function CreateCaseDialog({
 function ViewInFocusToggle({ theme }: { theme: FigmaTheme }) {
   const [inFocusOpen, setInFocusOpen] = useCanvasState<boolean>("inFocusOpen", true);
   const [menuOpen, setMenuOpen] = useCanvasState<boolean>("viewInFocusMenuOpen", false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setMenuOpen(false), [setMenuOpen]);
+  useDismissOnOutside(menuOpen, close, rootRef);
 
   return (
-    <div style={{ position: "relative" }}>
+    <div ref={rootRef} style={{ position: "relative" }}>
       <Button variant="ghost" style={{ height: 28, fontSize: 11 }} onClick={() => setMenuOpen(!menuOpen)}>
         View In Focus ▾
       </Button>
@@ -5818,12 +6930,7 @@ function ViewInFocusToggle({ theme }: { theme: FigmaTheme }) {
 
 function CaseRowExpansion({ row, theme, openCase }: { row: CaseRowData; theme: FigmaTheme; openCase?: (id: CaseId, stage?: StageId) => void }) {
   const previewRows = MAPPING_DATA.slice(0, 4);
-  const targetCase: CaseId =
-    row.id.startsWith("WMT") || row.id.startsWith("CHY") || row.id.startsWith("AWM") || row.id.startsWith("VNT")
-      ? "walmart"
-      : "northern-retail";
-  const targetStage: StageId =
-    row.id.startsWith("AWM") || row.id.startsWith("VNT") ? "assessment" : row.id.startsWith("NRT") ? "intake" : "review";
+  const { caseId: targetCase, stage: targetStage } = caseRouteForRowId(row.id);
   return (
     <div style={{ padding: "12px 16px", background: theme.bg.elevated, borderTop: `1px solid ${theme.stroke.tertiary}` }}>
       <Stack gap={8}>
@@ -5858,9 +6965,11 @@ function CaseRowExpansion({ row, theme, openCase }: { row: CaseRowData; theme: F
 function CasesListView({
   theme,
   openCase,
+  onOpenTrustLayer,
 }: {
   theme: FigmaTheme;
-  openCase: (id: CaseId, stage?: StageId) => void;
+  openCase: (id: CaseId, stage?: StageId, fromRow?: CaseRowData) => void;
+  onOpenTrustLayer?: () => void;
 }) {
   const [expandedRow, setExpandedRow] = useCanvasState<string | null>("expandedCaseRow", null);
   const [search, setSearch] = useCanvasState<string>("casesSearch", "");
@@ -5869,6 +6978,9 @@ function CasesListView({
   const [viewMode, setViewMode] = useCanvasState<"list" | "grid">("casesViewMode", "list");
   const [selected, setSelected] = useCanvasState<string[]>("casesSelected", []);
   const [inFocusOpen] = useCanvasState<boolean>("inFocusOpen", true);
+  const filterRootRef = useRef<HTMLDivElement>(null);
+  const closeFilter = useCallback(() => setFilterOpen(false), [setFilterOpen]);
+  useDismissOnOutside(filterOpen, closeFilter, filterRootRef);
 
   function riskTone(r: RiskStatus): "deleted" | "warning" | "success" {
     if (r === "High Risk") return "deleted";
@@ -5877,13 +6989,6 @@ function CasesListView({
   }
   function actionTone(a: CaseRowData["action"]): "primary" | "ghost" {
     return a === "Negotiate" ? "primary" : "ghost";
-  }
-  function caseForRow(row: CaseRowData): { caseId: CaseId; stage: StageId } {
-    if (row.id.startsWith("WMT") || row.id.startsWith("CHY")) return { caseId: "walmart", stage: "review" };
-    if (row.id.startsWith("AWM") || row.id.startsWith("VNT")) return { caseId: "walmart", stage: "assessment" };
-    if (row.id.startsWith("NRT")) return { caseId: "northern-retail", stage: "intake" };
-    if (row.id.startsWith("HRZ") || row.id.startsWith("MBE") || row.id.startsWith("SXT")) return { caseId: "walmart", stage: "assessment" };
-    return { caseId: "walmart", stage: "memo" };
   }
 
   const filteredRows = CASE_ROWS.filter((row) => {
@@ -5941,6 +7046,32 @@ function CasesListView({
   return (
     <Row gap={16} align="start">
       <Stack gap={12} style={{ flex: 1, minWidth: 0 }}>
+        <Callout tone="info" title="From portfolio alert to committee decision">
+          Nine borrowers in flight — agents calculated health scores and extraction confidence; humans govern at trust
+          gates. <strong>Walmart Inc.</strong> is ready for your 12-minute Gate 2 review.{" "}
+          <strong>Northern Retail LLC</strong> is blocked at Gate 1 (sad path — same trace model as happy path).
+          {onOpenTrustLayer && (
+            <>
+              {" "}
+              <button
+                type="button"
+                onClick={onOpenTrustLayer}
+                style={{
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  fontFamily: "Inter, sans-serif",
+                  fontSize: "inherit",
+                  color: "#0a5af5",
+                  textDecoration: "underline",
+                }}
+              >
+                Trust Layer overview
+              </button>
+            </>
+          )}
+        </Callout>
         {filteredRows.length > 0 && inFocusOpen && (
           <InFocusBanner rows={filteredRows} theme={theme} openCase={openCase} />
         )}
@@ -5975,7 +7106,7 @@ function CasesListView({
                 }}
               />
             </div>
-            <div style={{ position: "relative" }}>
+            <div ref={filterRootRef} style={{ position: "relative" }}>
               <button
                 type="button"
                 onClick={() => setFilterOpen(!filterOpen)}
@@ -6072,12 +7203,12 @@ function CasesListView({
           ) : (
           <Grid columns={3} gap={12}>
             {filteredRows.map((row) => {
-              const { caseId, stage } = caseForRow(row);
+              const { caseId, stage } = caseRouteForRowId(row.id);
               return (
                 <div
                   key={row.id}
                   style={{ ...dxpCard(theme), padding: 12, cursor: "pointer" }}
-                  onClick={() => openCase(caseId, stage)}
+                  onClick={() => openCase(caseId, stage, row)}
                 >
                   <Stack gap={6}>
                     <Row align="center" justify="space-between">
@@ -6099,7 +7230,7 @@ function CasesListView({
                     <Pill tone="neutral">{row.stageBadge}</Pill>
                     <Text size="small" tone="tertiary">{row.triggerType} · {row.exposure}</Text>
                     <ExtractionConfBadge pct={row.extractionConf} theme={theme} />
-                    <Button variant={actionTone(row.action)} style={{ height: 28, fontSize: 11 }} onClick={(e) => { e.stopPropagation(); openCase(caseId, stage); }}>
+                    <Button variant={actionTone(row.action)} style={{ height: 28, fontSize: 11 }} onClick={(e) => { e.stopPropagation(); openCase(caseId, stage, row); }}>
                       {row.action}
                     </Button>
                   </Stack>
@@ -6131,7 +7262,7 @@ function CasesListView({
               "Action",
             ]}
             rows={filteredRows.map((row) => {
-              const { caseId, stage } = caseForRow(row);
+              const { caseId, stage } = caseRouteForRowId(row.id);
               const isExpanded = expandedRow === row.id;
               return [
                 <input
@@ -6186,7 +7317,7 @@ function CasesListView({
                   <Button
                     variant={actionTone(row.action)}
                     style={{ height: 28, fontSize: 11 }}
-                    onClick={() => openCase(caseId, stage)}
+                    onClick={() => openCase(caseId, stage, row)}
                   >
                     {row.action}
                   </Button>
@@ -6210,7 +7341,13 @@ function CasesListView({
   );
 }
 
-function AgentCatalogView({ theme }: { theme: ReturnType<typeof useHostTheme> }) {
+function AgentCatalogView({
+  theme,
+  onOpenTrustLayer,
+}: {
+  theme: ReturnType<typeof useHostTheme>;
+  onOpenTrustLayer?: () => void;
+}) {
   const agentList = Object.values(AGENTS);
   const recentActions = [
     { time: "Mar 17, 6:02 AM", agentId: "review" as AgentId, action: "Flagged Total Assets outlier — WMT-TLB-2025" },
@@ -6221,6 +7358,32 @@ function AgentCatalogView({ theme }: { theme: ReturnType<typeof useHostTheme> })
   ];
   return (
     <Stack gap={16}>
+      <Callout tone="info" title="Agent-first credit operating system">
+        Ten named agents do the cognitive work — spreading, exception detection, covenant scans, memo drafting. Humans
+        govern at five trust gates. The catalog below is the live runtime, not documentation.
+        {onOpenTrustLayer && (
+          <>
+            {" "}
+            <button
+              type="button"
+              onClick={onOpenTrustLayer}
+              style={{
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                fontFamily: "Inter, sans-serif",
+                fontSize: "inherit",
+                color: "#0a5af5",
+                textDecoration: "underline",
+              }}
+            >
+              View Trust Layer model
+            </button>
+          </>
+        )}
+      </Callout>
+      <TrustGateLadder theme={theme} />
       <div style={dxpCard(theme)}>
         <Stack gap={8}>
           <Row align="center" justify="space-between">
@@ -6282,31 +7445,83 @@ export default function FinancialSpreadingACOS() {
   const [caseId, setCaseId] = useCanvasState<CaseId>("activeCaseId", "walmart");
   const [, setStageId] = useCanvasState<StageId>("caseStage", "review");
   const [createOpen, setCreateOpen] = useCanvasState<boolean>("createCaseOpen", false);
+  const [, setDemoPortfolioContext] = useCanvasState<DemoPortfolioContext>("demoPortfolioContext", null);
+  const [, setPortfolioBannerDismissed] = useCanvasState<boolean>("portfolioBannerDismissed", false);
+  const [sopViewer, setSopViewer] = useCanvasState<{ section: string; appliedTo?: string } | null>("sopViewerOpen", null);
+  const [trustLayerOpen, setTrustLayerOpen] = useCanvasState<boolean>("trustLayerOpen", false);
 
-  const openCase = (id: CaseId, stage?: StageId) => {
+  const openTrustLayer = () => setTrustLayerOpen(true);
+  const openCreditPolicy = () => setSopViewer({ section: "§4.2", appliedTo: "Credit Policy" });
+
+  const [, setDetailTab] = useCanvasState<CaseDetailTab>("caseDetailTab", "extracted");
+
+  const openCase = (id: CaseId, stage?: StageId, fromRow?: CaseRowData) => {
     setCaseId(id);
-    setStageId(stage ?? CASES[id].defaultStage);
+    const resolvedStage = stage ?? CASES[id].defaultStage;
+    setStageId(resolvedStage);
+    setDetailTab(id === "walmart" && resolvedStage === "review" ? "exceptions" : "extracted");
     setView("case");
     setCreateOpen(false);
+    if (fromRow && !fromRow.id.startsWith("WMT") && !fromRow.id.startsWith("NRT")) {
+      setDemoPortfolioContext({ entity: fromRow.entity, concern: fromRow.primaryConcern });
+      setPortfolioBannerDismissed(false);
+    } else {
+      setDemoPortfolioContext(null);
+    }
   };
 
   const caseContext = view === "case" ? `${CASES[caseId].title} · ${CASES[caseId].caseRef}` : undefined;
 
   return (
     <Stack gap={8}>
+      <SopViewerPanel
+        open={sopViewer != null}
+        section={sopViewer?.section ?? null}
+        appliedTo={sopViewer?.appliedTo}
+        onClose={() => setSopViewer(null)}
+        theme={theme}
+      />
+      <TrustLayerPanel
+        open={trustLayerOpen}
+        onClose={() => setTrustLayerOpen(false)}
+        theme={theme}
+        onOpenCreditPolicy={() => {
+          setTrustLayerOpen(false);
+          openCreditPolicy();
+        }}
+        onNavigateAgents={() => {
+          setTrustLayerOpen(false);
+          setView("agents");
+        }}
+      />
       {createOpen && (
         <CreateCaseDialog theme={theme} openCase={openCase} onClose={() => setCreateOpen(false)} />
       )}
-      <DxpShell view={view} setView={setView} theme={theme} caseContext={caseContext}>
-        {view === "command" && <CommandCenterView openCase={openCase} theme={theme} />}
-        {view === "portfolio" && <PortfolioView openCase={openCase} theme={theme} />}
-        {view === "caselist" && <CasesListView theme={theme} openCase={openCase} />}
+      <DxpShell
+        view={view}
+        setView={setView}
+        theme={theme}
+        caseContext={caseContext}
+        onOpenCreditPolicy={openCreditPolicy}
+        onOpenTrustLayer={openTrustLayer}
+      >
+        {view === "command" && (
+          <CommandCenterView
+            openCase={openCase}
+            theme={theme}
+            onOpenTrustLayer={openTrustLayer}
+            onOpenCreditPolicy={openCreditPolicy}
+          />
+        )}
+        {view === "portfolio" && <PortfolioView openCase={openCase} theme={theme} onOpenTrustLayer={openTrustLayer} />}
+        {view === "caselist" && <CasesListView theme={theme} openCase={openCase} onOpenTrustLayer={openTrustLayer} />}
         {view === "case" && <CaseWorkspaceView theme={theme} />}
-        {view === "agents" && <AgentCatalogView theme={theme} />}
+        {view === "agents" && <AgentCatalogView theme={theme} onOpenTrustLayer={openTrustLayer} />}
       </DxpShell>
       <ActionToastBanner theme={theme} />
       <Text size="small" tone="quaternary" style={{ padding: "0 16px" }}>
-        Demo arc: Portfolio Sentinel alert → Case briefing → Lifecycle trace → Trust inspector → Connected decision
+        Demo arc: Portfolio Sentinel alert → Agent briefing → Trust Layer gates → Lifecycle trace → Trust Inspector →
+        Connected decision
       </Text>
     </Stack>
   );

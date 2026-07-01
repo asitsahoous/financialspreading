@@ -93,6 +93,22 @@ export function useCanvasState<T>(key: string, initial: T): [T, (v: T | ((prev: 
   return [value, set];
 }
 
+/** Clear all persisted demo state and reload so gates/buttons start fresh. */
+export function resetDemoSession() {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key?.startsWith("acos:")) keys.push(key);
+    }
+    for (const key of keys) sessionStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+  store.clear();
+  window.location.reload();
+}
+
 /** Ephemeral toast — auto-clears after 2.8s; not persisted to sessionStorage. */
 export function showActionToast(message: string) {
   const gen = ++toastGeneration;
