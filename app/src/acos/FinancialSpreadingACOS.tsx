@@ -19,7 +19,14 @@ import {
   useCanvasState,
   useHostTheme,
 } from "./ui";
-import type { CSSProperties, MouseEvent, ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+
+/** Minimal shape used for click-outside checks — avoids importing React.MouseEvent, which
+ *  is not exported the same way across the app's Vite/@types-react setup and the Canvas
+ *  TypeScript environment. */
+type ClickTarget = { target: EventTarget | null; currentTarget: EventTarget | null };
+/** Minimal shape used for text input/textarea change handlers — same portability reason as ClickTarget. */
+type ChangeTarget = { target: { value: string } };
 
 /**
  * Figma BMO design tokens (Financial Spreading BMO file)
@@ -3154,7 +3161,7 @@ function CreditMemoFullView({ theme, onClose }: { theme: FigmaTheme; onClose: ()
         justifyContent: "center",
         padding: 24,
       }}
-      onClick={(e: MouseEvent<HTMLDivElement>) => e.target === e.currentTarget && onClose()}
+      onClick={(e: ClickTarget) => e.target === e.currentTarget && onClose()}
     >
       <div
         style={{
@@ -4366,7 +4373,7 @@ function TrustInspector({
             <input
               type="text"
               value={correctedValue}
-              onChange={(e) => setCorrectedValue(e.target.value)}
+              onChange={(e: ChangeTarget) => setCorrectedValue(e.target.value)}
               placeholder={row.value}
               style={{
                 padding: "6px 10px",
@@ -4379,7 +4386,7 @@ function TrustInspector({
             <Text size="small" weight="semibold">Note</Text>
             <textarea
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={(e: ChangeTarget) => setNote(e.target.value)}
               placeholder="Type your message here"
               rows={2}
               style={{
@@ -4984,85 +4991,85 @@ function CasesListView({
         </Row>
       </Row>
 
-      <Stack gap={0}>
-        {CASE_ROWS.map((row) => {
+      <Table
+        headers={[
+          "",
+          "Case (Entity)",
+          "Trigger Type",
+          "Extraction Conf.",
+          "Exposure",
+          "Net Margin %",
+          "Health Score",
+          "Risk Status",
+          "Primary Concern",
+          "Tasks",
+          "Action",
+        ]}
+        rows={CASE_ROWS.map((row) => {
           const { caseId, stage } = caseForRow(row);
           const isExpanded = expandedRow === row.id;
-          return (
-            <div key={row.id} style={{ border: `1px solid ${theme.stroke.secondary}`, borderRadius: isExpanded ? 8 : 0, marginBottom: isExpanded ? 8 : -1, overflow: "hidden" }}>
-              <Table
-                headers={[
-                  "",
-                  "Case (Entity)",
-                  "Trigger Type",
-                  "Extraction Conf.",
-                  "Exposure",
-                  "Net Margin %",
-                  "Health Score",
-                  "Risk Status",
-                  "Primary Concern",
-                  "Tasks",
-                  "Action",
-                ]}
-                rows={[[
-                  <input type="checkbox" style={{ cursor: "pointer" }} />,
-                  <Row gap={6} align="center" style={{ cursor: "pointer" }}>
-                    <span
-                      onClick={() => setExpandedRow(isExpanded ? null : row.id)}
-                      style={{ color: theme.text.quaternary, fontSize: 11, transform: isExpanded ? "rotate(90deg)" : "none", display: "inline-block" }}
-                    >
-                      ›
-                    </span>
-                    <Text weight="semibold" size="small">{row.entity}</Text>
-                  </Row>,
-                  row.triggerType,
-                  <ExtractionConfBadge pct={row.extractionConf} theme={theme} />,
-                  row.exposure,
-                  <Text
-                    size="small"
-                    style={{
-                      color: row.netMarginPct.startsWith("-") ? theme.diff.removedLine : theme.category.green,
-                    }}
-                  >
-                    {row.netMarginPct}
-                  </Text>,
-                  <HealthScorePill score={row.healthScore} theme={theme} />,
-                  <Pill tone={riskTone(row.riskStatus)}>• {row.riskStatus}</Pill>,
-                  <Text size="small" tone="secondary">{row.primaryConcern}</Text>,
-                  row.tasks > 0 ? (
-                    <span
-                      style={{
-                        background: theme.accent.primary,
-                        color: "#fff",
-                        borderRadius: "50%",
-                        width: 20,
-                        height: 20,
-                        fontSize: 11,
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      {String(row.tasks).padStart(2, "0")}
-                    </span>
-                  ) : (
-                    <Text size="small" tone="quaternary">N/A</Text>
-                  ),
-                  <Button
-                    variant={actionTone(row.action)}
-                    style={{ height: 28, fontSize: 11 }}
-                    onClick={() => openCase(caseId, stage)}
-                  >
-                    {row.action}
-                  </Button>,
-                ]]}
-                rowTone={[row.riskStatus === "High Risk" ? "danger" : row.riskStatus === "Moderate Risk" ? "warning" : undefined]}
-              />
-              {isExpanded && <CaseRowExpansion row={row} theme={theme} />}
-            </div>
-          );
+          return [
+            <input type="checkbox" style={{ cursor: "pointer" }} />,
+            <Row gap={6} align="center">
+              <span
+                onClick={() => setExpandedRow(isExpanded ? null : row.id)}
+                style={{ color: theme.text.quaternary, fontSize: 11, cursor: "pointer", transform: isExpanded ? "rotate(90deg)" : "none", display: "inline-block" }}
+              >
+                ›
+              </span>
+              <Text weight="semibold" size="small">{row.entity}</Text>
+            </Row>,
+            row.triggerType,
+            <ExtractionConfBadge pct={row.extractionConf} theme={theme} />,
+            row.exposure,
+            <Text
+              size="small"
+              style={{
+                color: row.netMarginPct.startsWith("-") ? theme.diff.removedLine : theme.category.green,
+              }}
+            >
+              {row.netMarginPct}
+            </Text>,
+            <HealthScorePill score={row.healthScore} theme={theme} />,
+            <Pill tone={riskTone(row.riskStatus)}>• {row.riskStatus}</Pill>,
+            <Text size="small" tone="secondary">{row.primaryConcern}</Text>,
+            row.tasks > 0 ? (
+              <span
+                style={{
+                  background: theme.accent.primary,
+                  color: "#fff",
+                  borderRadius: "50%",
+                  width: 20,
+                  height: 20,
+                  fontSize: 11,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {String(row.tasks).padStart(2, "0")}
+              </span>
+            ) : (
+              <Text size="small" tone="quaternary">N/A</Text>
+            ),
+            <Button
+              variant={actionTone(row.action)}
+              style={{ height: 28, fontSize: 11 }}
+              onClick={() => openCase(caseId, stage)}
+            >
+              {row.action}
+            </Button>,
+          ];
         })}
-      </Stack>
+        rowTone={CASE_ROWS.map((r) =>
+          r.riskStatus === "High Risk" ? "danger" : r.riskStatus === "Moderate Risk" ? "warning" : undefined,
+        )}
+        striped
+        renderRowExtra={(ri) => {
+          const row = CASE_ROWS[ri];
+          return expandedRow === row.id ? <CaseRowExpansion row={row} theme={theme} /> : null;
+        }}
+      />
     </Stack>
   );
 }

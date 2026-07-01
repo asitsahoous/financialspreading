@@ -1,4 +1,5 @@
 import {
+  Fragment,
   type CSSProperties,
   type ReactNode,
   type ButtonHTMLAttributes,
@@ -327,11 +328,14 @@ export function Table({
   rows,
   rowTone,
   striped,
+  renderRowExtra,
 }: {
   headers: ReactNode[];
   rows: ReactNode[][];
   rowTone?: Array<TableRowTone | undefined>;
   striped?: boolean;
+  /** Optional expansion content rendered as a full-width row directly under row index `i`. */
+  renderRowExtra?: (rowIndex: number) => ReactNode;
 }) {
   const theme = useHostTheme();
   return (
@@ -358,41 +362,50 @@ export function Table({
         <tbody>
           {rows.map((row, ri) => {
             const tone = rowTone?.[ri];
+            const extra = renderRowExtra?.(ri);
             return (
-              <tr
-                key={ri}
-                style={{
-                  background: striped && ri % 2 === 1 ? theme.fill.quaternary : undefined,
-                }}
-              >
-                {headers.map((_, ci) => (
-                  <td
-                    key={ci}
-                    style={{
-                      padding: "10px 12px",
-                      borderBottom: `1px solid ${theme.stroke.tertiary}`,
-                      verticalAlign: "top",
-                    }}
-                  >
-                    {ci === 0 && tone ? (
-                      <Row gap={8} align="center">
-                        <span
-                          style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: "50%",
-                            background: rowDot[tone],
-                            flexShrink: 0,
-                          }}
-                        />
-                        {row[ci] ?? ""}
-                      </Row>
-                    ) : (
-                      row[ci] ?? ""
-                    )}
-                  </td>
-                ))}
-              </tr>
+              <Fragment key={ri}>
+                <tr
+                  style={{
+                    background: striped && ri % 2 === 1 ? theme.fill.quaternary : undefined,
+                  }}
+                >
+                  {headers.map((_, ci) => (
+                    <td
+                      key={ci}
+                      style={{
+                        padding: "10px 12px",
+                        borderBottom: `1px solid ${theme.stroke.tertiary}`,
+                        verticalAlign: "top",
+                      }}
+                    >
+                      {ci === 0 && tone ? (
+                        <Row gap={8} align="center">
+                          <span
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: "50%",
+                              background: rowDot[tone],
+                              flexShrink: 0,
+                            }}
+                          />
+                          {row[ci] ?? ""}
+                        </Row>
+                      ) : (
+                        row[ci] ?? ""
+                      )}
+                    </td>
+                  ))}
+                </tr>
+                {extra && (
+                  <tr>
+                    <td colSpan={headers.length} style={{ padding: 0, borderBottom: `1px solid ${theme.stroke.tertiary}` }}>
+                      {extra}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             );
           })}
         </tbody>
