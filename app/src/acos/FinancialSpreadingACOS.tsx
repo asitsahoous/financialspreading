@@ -3917,11 +3917,9 @@ function PortfolioView({
 
 function CommandCenterView({
   openCase,
-  setView,
   theme,
 }: {
   openCase: (id: CaseId, stage?: StageId) => void;
-  setView: (v: View) => void;
   theme: FigmaTheme;
 }) {
   return (
@@ -4082,7 +4080,7 @@ function CommandCenterView({
             "Sentinel: covenant breach detected",
             "~1.2 days",
             <Pill tone="deleted">Critical</Pill>,
-            <Button variant="ghost" onClick={() => openCase("walmart", "assessment")}>View alert</Button>,
+            <Button variant="ghost" onClick={() => openCase("walmart", "assessment")}>View alert (Walmart demo)</Button>,
           ],
           [
             "Borrower 5",
@@ -4836,12 +4834,15 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
   const [auditAppend, setAuditAppend] = useCanvasState<AuditEvent[]>("auditAppend", []);
   const [memoOpen, setMemoOpen] = useCanvasState<boolean>("memoFullOpen", false);
   const [lastCreatedLabel] = useCanvasState<string>("lastCreatedCaseLabel", "");
-  const [, setSavedAt] = useCanvasState<string>("caseSavedAt", "");
+  const [savedAt, setSavedAt] = useCanvasState<string>("caseSavedAt", "");
   const [mappingSearch, setMappingSearch] = useCanvasState<string>("mappingFieldSearch", "");
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
   const caseDef = CASES[caseId];
   const caseAudit = auditAppend.filter((e) => e.caseId === caseId);
+  const signedGateActions = new Set(
+    caseAudit.map((e) => e.gateAction).filter((g): g is GateSignKind => g != null),
+  );
   const mergedLog: RuntimeLogEntry[] = [...caseDef.runtimeLog, ...caseAudit];
   const newEntryIds = new Set(caseAudit.map((e) => e.id));
   const activeTrace = caseDef.traces[stageId];
@@ -4857,13 +4858,25 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
   const receivedCount = caseDef.intakeDocs.filter((d) => d.received).length;
 
   const appendAudit = (action: GateAction) => {
+    if (isGateSignKind(action.kind)) {
+      setAuditAppend((prev) => {
+        const alreadySigned = prev.some((e) => e.caseId === caseId && e.gateAction === action.kind);
+        if (alreadySigned) {
+          showActionToast("This gate was already signed in this session");
+          return prev;
+        }
+        const event = makeAuditEvent(caseId, action);
+        if (action.kind === "gate2-sign") showActionToast("Gate 2 signed — mapping approved");
+        else if (action.kind === "gate3-sign") showActionToast("Gate 3 signed — risk assessment approved");
+        else if (action.kind === "gate4-sign") showActionToast("Gate 4 signed — credit memo approved");
+        else if (action.kind === "gate5-sign") showActionToast("Gate 5 signed — committee decision recorded");
+        return [...prev, event];
+      });
+      return;
+    }
     const event = makeAuditEvent(caseId, action);
-    setAuditAppend([...auditAppend, event]);
-    if (action.kind === "gate2-sign") showActionToast("Gate 2 signed — mapping approved");
-    else if (action.kind === "gate3-sign") showActionToast("Gate 3 signed — risk assessment approved");
-    else if (action.kind === "gate4-sign") showActionToast("Gate 4 signed — credit memo approved");
-    else if (action.kind === "gate5-sign") showActionToast("Gate 5 signed — committee decision recorded");
-    else if (action.kind === "intake-override") showActionToast("Intake override logged to audit trail");
+    setAuditAppend((prev) => [...prev, event]);
+    if (action.kind === "intake-override") showActionToast("Intake override logged to audit trail");
     else if (action.kind === "mapping-accept") showActionToast(`Accepted mapping for ${action.field}`);
     else if (action.kind === "mapping-override") showActionToast("Override logged with reason and timestamp");
   };
@@ -4872,6 +4885,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
     setCaseId(id);
     setStageId(CASES[id].defaultStage);
     setSelectedField(null);
+    setMappingSearch("");
   };
 
   const pipelineSteps: PipelineStep[] = isNorthern
@@ -4895,6 +4909,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
           theme={theme}
           onClose={() => setMemoOpen(false)}
           onSubmit={() => appendAudit({ kind: "gate4-sign" })}
+          gate4Signed={signedGateActions.has("gate4-sign")}
         />
       )}
       {lastCreatedLabel && (
@@ -4936,6 +4951,11 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
               >
                 Save
               </Button>
+              {savedAt && (
+                <Text size="small" tone="quaternary">
+                  Saved {savedAt}
+                </Text>
+              )}
               <Button variant="primary" style={{ height: 28, fontSize: 11 }} onClick={() => setMemoOpen(true)}>
                 Generate Report
               </Button>
@@ -5236,7 +5256,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
               )}
               <ValidateRatiosPanel
                 theme={theme}
-                onMarkComplete={() => appendAudit({ kind: "gate2-sign" })}
+                onMarkComplete={() => showActionToast("Ratio validation marked complete — sign Gate 2 when ready")}
               />
               <Card>
                 <CardHeader trailing={<AgentTag agentId="mapping" theme={theme} />}>
@@ -5249,6 +5269,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                   <GateSignOffBar
                     mode="gate2-sign"
                     theme={theme}
+                    disabled={signedGateActions.has("gate2-sign")}
                     onAction={(action) => appendAudit(action)}
                   />
                 </CardBody>
@@ -5279,6 +5300,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                   <GateSignOffBar
                     mode="gate3-sign"
                     theme={theme}
+                    disabled={signedGateActions.has("gate3-sign")}
                     onAction={(action) => appendAudit(action)}
                   />
                 </CardBody>
@@ -5305,6 +5327,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                   <GateSignOffBar
                     mode="gate4-sign"
                     theme={theme}
+                    disabled={signedGateActions.has("gate4-sign")}
                     onAction={(action) => appendAudit(action)}
                   />
                 </CardBody>
@@ -5340,6 +5363,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                     <GateSignOffBar
                       mode="gate5-sign"
                       theme={theme}
+                      disabled={signedGateActions.has("gate5-sign")}
                       onAction={(action) => appendAudit(action)}
                     />
                     <Button variant="secondary" onClick={() => setMemoOpen(true)}>
@@ -6274,7 +6298,7 @@ export default function FinancialSpreadingACOS() {
         <CreateCaseDialog theme={theme} openCase={openCase} onClose={() => setCreateOpen(false)} />
       )}
       <DxpShell view={view} setView={setView} theme={theme} caseContext={caseContext}>
-        {view === "command" && <CommandCenterView openCase={openCase} setView={setView} theme={theme} />}
+        {view === "command" && <CommandCenterView openCase={openCase} theme={theme} />}
         {view === "portfolio" && <PortfolioView openCase={openCase} theme={theme} />}
         {view === "caselist" && <CasesListView theme={theme} openCase={openCase} />}
         {view === "case" && <CaseWorkspaceView theme={theme} />}
