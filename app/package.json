@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Agentic Credit OS (ACOS) — Financial Spreading prototype for engineering review",
+  "description": "Agentic Credit OS (ACOS) — Financial Spreading prototype. Set VITE_API_URL to connect to the LangGraph backend.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
