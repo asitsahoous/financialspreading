@@ -10,6 +10,8 @@ This workspace contains board-demo planning materials for Iron Mountain DXP **Co
 |----------|--------|-------------------|
 | **ACOS web app (engineering)** | [`app/`](app/) | Run `cd app && npm install && npm run dev` |
 | Board demo script | [`BOARD_DEMO_SCRIPT.md`](BOARD_DEMO_SCRIPT.md) | 15-min click-through |
+| Product requirements backlog (CL Alpha) | [`PRODUCT_REQUIREMENTS.md`](PRODUCT_REQUIREMENTS.md) | Feature backlog by Platform Epic, mapped against current demo coverage |
+| **Production planning suite (CL Alpha)** | [`docs/`](docs/README.md) | PRD, technical architecture, workflow/exception catalog, known-issues audit, phased roadmap for turning the prototype into a production system |
 | Board demo deck | `(WIP) Crisp Deck _ Commercial Lending _ MASTER.pptx` | [`_index/_WIP_Crisp_Deck___Commercial_Lending___MASTER.pptx.md`](_index/_WIP_Crisp_Deck___Commercial_Lending___MASTER.pptx.md) |
 | Dashboard mockups | `Financial Spreading Dashboards - Commercial Credit, Auto Finance, Rent Rolls.pptx` | [`_index/Financial_Spreading_Dashboards_-_Commercial_Credit_Auto_Finance_Rent_Rolls.pptx.md`](_index/Financial_Spreading_Dashboards_-_Commercial_Credit_Auto_Finance_Rent_Rolls.pptx.md) |
 | Demo prep (Jun 29) | `Board Demo Prep - 2026_06_29 ... Notes by Gemini.docx` | [`_index/Board_Demo_Prep_-_2026_06_29_12_30_EDT_-_Notes_by_Gemini.docx.md`](_index/Board_Demo_Prep_-_2026_06_29_12_30_EDT_-_Notes_by_Gemini.docx.md) |
@@ -26,6 +28,8 @@ financial-spreading-board/
 ├── INDEX.md                          ← this file
 ├── BOARD_DEMO_SCRIPT.md              ← 15-min demo script
 ├── app/                              ← Vite React ACOS application
+├── docs/                             ← production planning suite (PRD, architecture, workflows, known issues, roadmap)
+├── PRODUCT_REQUIREMENTS.md           ← CL Alpha feature backlog (25 items)
 ├── _index/                           ← searchable text exports (use for AI search)
 ├── (WIP) Crisp Deck ... MASTER.pptx  ← board presentation deck
 ├── Financial Spreading Dashboards ...pptx

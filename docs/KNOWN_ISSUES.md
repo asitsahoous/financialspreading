@@ -1,0 +1,88 @@
+# Known Issues — Remediation Backlog
+
+**Status:** Draft for review · **Last updated:** 2026-07-02
+**Source:** Full code audit of `app/src/acos/FinancialSpreadingACOS.tsx`, supporting frontend files, and `backend/graph/nodes/*.py`, run 2026-07-02. Line numbers are accurate as of that audit but will drift as the file changes — treat them as a starting point for `grep`, not a permanent anchor.
+**Companion documents:** [PRD](PRD.md) · [Technical Architecture](TECHNICAL_ARCHITECTURE.md) · [Workflows & Exceptions](WORKFLOWS_AND_EXCEPTIONS.md) · [Roadmap](ROADMAP.md)
+
+This is the concrete "make the demo real" backlog the user asked for — every button, workflow, or claim in the current app that doesn't actually do what it appears to do. Each item has a **priority** (P0 = blocks production launch, P1 = should fix before general availability, P2 = polish/nice-to-have) and a **fix** that ties back to [Technical Architecture](TECHNICAL_ARCHITECTURE.md) and, where applicable, a [PRD](PRD.md) item it overlaps with.
+
+## Progress log
+
+**2026-07-02 — Phase 0 slice shipped: Gate 1–5 sign-off is now real.** Implemented per [ROADMAP.md](ROADMAP.md) Phase 0 (narrowed scope — see below). Concretely:
+- Provisioned a dedicated Supabase Postgres project (`financial-spreading-board`, us-east-1) for the backend checkpointer. **DB password still needs to be pasted into `backend/.env`** (Supabase doesn't expose it via API) — until then the backend correctly falls back to local SQLite.
+- **Found and fixed 3 previously-unknown backend bugs that meant the backend had never actually run end-to-end before:** (1) `SqliteSaver.from_conn_string()`/`PostgresSaver.from_conn_string()` are `@contextmanager` generators — assigning them directly (as the original code did) yields the wrapper object, not a usable saver, crashing the app on startup; (2) `backend/api/router.py` awaited `graph.ainvoke()` (async) while using sync `SqliteSaver`/`PostgresSaver`, which only support sync methods — every case-creation and gate-sign call raised `NotImplementedError`; (3) `decision.get("reason", default)` in `backend/graph/gates.py` doesn't fall back when `reason` is explicitly `None` (the common case — signing a gate without a reason) because the key *exists*, just with a `None` value — this crashed the `/audit` endpoint via a Pydantic validation error. All three are fixed.
+- Wired `app/src/acos/backendCase.ts` (new) + `app/src/acos/FinancialSpreadingACOS.tsx`'s `CaseWorkspaceView` so Gate 1–5 "sign" actions for the Walmart and Northern Retail demo cases call the real backend (`POST /cases/{id}/gates/{gate_id}`) and persist across reload/restart — verified via a real server-restart test and a client-state-wipe test (cleared local audit log, kept only the backend case pointer, reloaded — Gate 2 still recognized as signed).
+- **Scope was narrowed from the original plan** for one concrete reason discovered mid-implementation: the frontend's fixture intake-document names (e.g. Walmart's `"WLBOR"`, `"WLBBSHEET"`; Northern Retail's `"FY2024 Annual Report"`) don't match the backend's fixed 9-item SOP §4.2 manifest names (`"10-K Annual Filing"`, etc.) at all — different names, different counts. Wiring the **document intake checklist** itself to the backend's `receive-document` endpoint was deferred rather than forcing a mismatched integration; **document intake, mapping/exceptions, overrides, Gate 5 decline/table, and portfolio widgets remain on local state for now** — still accurate as P0/P1 items below. Reconciling the document schema (one canonical manifest, used by both frontend copy and backend) is necessary follow-up before those can be wired the same way.
+- All 24 existing Playwright e2e tests (`npm run test:e2e`) still pass against the wired build — no regressions (one run hit a pre-existing flaky timing issue on Journey 4 unrelated to this change; passed in isolation and on rerun).
+
+**2026-07-02 (same day, follow-on) — Trust Inspector "Accept mapping" / "Apply correction" now real too, for the one field that's safe to wire.** Extended `backendCase.ts` with `overrideBackendField()` and a `BACKEND_WIRED_MAPPING_FIELDS` allowlist (currently just `"Total Assets"` — the one exception field seeded identically, same name and same `$100K` value, on both the frontend fixture and the backend's `document_intel.py`). `CaseWorkspaceView`'s central `appendAudit` dispatcher now calls `POST /cases/{id}/overrides` for `mapping-accept`/`mapping-override` actions on that field, verified via a real network call + a direct check of the resulting `audit_trail` entry in backend state. Every other mapping field stays local-only until the broader document/mapping fixture-vs-backend schema reconciliation happens (same root cause as the deferred document-intake wiring above).
+
+---
+
+## P0 — Blocks production launch
+
+These represent the core gap between "demo" and "product": no persistence, no real extraction, no real multi-user support.
+
+| # | Issue | Location | What happens today | Fix |
+|---|---|---|---|---|
+| P0-1 | **All state is browser `sessionStorage`, not a database** | App-wide (`state.ts`, Canvas state API) | Every case, gate signature, override, and correction lives only in the current browser tab; "Reset demo" wipes everything; nothing survives across devices/users | Implement the Postgres schema in [Technical Architecture §3](TECHNICAL_ARCHITECTURE.md#3-data-model-new--the-biggest-gap); wire frontend to real API calls (§8/§9) |
+| P0-2 | **No real document extraction/OCR — "Document Intelligence" is a hardcoded field list with a seeded error** | `backend/graph/nodes/document_intel.py:20-90` | `FIELD_TEMPLATES` returns a fixed 23-field list; the Total Assets scale error (demoed as a Trust Inspector exception) is a deliberately planted bug, not a real extraction miss | Build the real OCR + LLM extraction pipeline per [Technical Architecture §4](TECHNICAL_ARCHITECTURE.md#4-document-extraction--ocr--llm) (PRD #3) |
+| P0-3 | **Connector Sync (Experian/Equifax/D&B/AML/Bloomberg) never calls a real API even when keys are present** | `backend/graph/nodes/connector.py:13-131` | `HAVE_EXPERIAN = bool(os.getenv(...))` is checked but no code path actually calls the bureau API — output is always the same hardcoded scores (Experian 76, Equifax 92, PAYDEX 80) | Implement real bureau/AML integrations, or explicitly relabel these as simulated in the UI until they're built — don't leave a flag that implies "real if key present" when it isn't |
+| P0-4 | **Decision Synthesis is a fixed formula with hardcoded bureau inputs, not a configurable or LLM-reasoned engine** | `backend/graph/nodes/decision.py:23-50` | Weights (40/35/25) and bureau scores are hardcoded constants | Ties directly to PRD #19 (Custom Risk Recommendation Engine) — replace with the versioned formula engine |
+| P0-5 | **All 4 borrower financial statements are synthetically generated, not ingested from real source documents** | `app/src/acos/financials/dataset.ts`, `generator.ts` | `generateCompanyValues()` fabricates numbers that are made to tie out | Expected for a demo; for production this becomes the *output* of the real extraction pipeline (P0-2), not a fixture — no separate fix needed beyond P0-2, but flag so nobody mistakes `dataset.ts` for a seed of real customer data |
+| P0-6 | **Case creation and 3 of 4 "other" portfolio cards always route to the Walmart or Northern Retail hardcoded case IDs** | `FinancialSpreadingACOS.tsx` ~2119-2125 (`caseRouteForRowId`), ~6514 | AutoWest/Costco/Target cards and "new case" creation all resolve to a small hardcoded if/else tree, ultimately falling back to `{ caseId: "walmart", ... }` | Real case creation must generate a new case record in the database (P0-1) with its own ID, not route to a shared fixture — this is the single most visible "fake" behavior once real users start clicking around |
+| P0-7 | **No error handling for failed document upload or failed API calls** | `FinancialSpreadingACOS.tsx` `handleFileInputChange` (~6764); `app/src/api/client.ts:11-21` | Upload failures fail silently (no error UI); API client throws but nothing catches it with a retry/fallback UI | Implement the error-handling standard from [PRD §7](PRD.md#7-cross-cutting-requirements) — every async action needs a defined failure state |
+
+## P1 — Should fix before general availability
+
+Real but secondary functionality; each maps to a PRD item that supersedes the placeholder.
+
+| # | Issue | Location | What happens today | Fix |
+|---|---|---|---|---|
+| P1-1 | **PDF export downloads a `.txt` file** | `FinancialSpreadingACOS.tsx:3730-3741` | `isPdfDemo` branch sets MIME to `text/plain` and writes `[Demo PDF export — plain text placeholder]` | Real PDF generation, and only once the memo-template engine (PRD #23) exists — export the templated memo, not an ad hoc dump |
+| P1-2 | **Excel export is actually a CSV stub** | Same block, `{ ext: "csv", mime: "text/csv" }` | Labeled Excel, delivers minimal CSV | Either build real `.xlsx` generation or relabel the button honestly as CSV until it's built |
+| P1-3 | **InSight Assist chat gives a hardcoded response, not a real LLM answer** | `FinancialSpreadingACOS.tsx:3514, 3536` | `setChatReply(`${agent}: Prioritize AutoWest...`)` — same canned text regardless of input | Superseded by PRD #18 (Inline AI Ratio Explainer) — build one real LLM-backed explainer surface rather than two separate fake chat UIs |
+| P1-4 | **Ratio trend sparklines are hardcoded arrays, not calculated from the underlying financials** | `FinancialSpreadingACOS.tsx:2146-2204` (e.g. `trend2025: [0.7, 0.72, ...]`) | Numbers don't derive from the spread data shown elsewhere on the same screen — they can silently disagree with the real ratio value | Compute trends from the actual FC time series (ties to PRD #29 Time-Series Dashboards) |
+| P1-5 | **Portfolio Sentinel alerts are static fixtures, not a real scan** | `FinancialSpreadingACOS.tsx:4863-4977` | 10 alert cards with hardcoded `riskStatus`/`stageBadge` | Superseded by PRD #30 (Portfolio-Level Dashboards) reading from the real calculated-values table (#31/#32) |
+| P1-6 | **13+ menu actions across Intake/Review/Credit Memo screens only show a toast, with no state change** — full list below | Various, see table | Buttons like "View document," "Re-classify," "Export document list," "Recalculate ratios," "Escalate to Risk Officer," "Assign reviewer," "Request revisions," "Print preview," "View older recommendations" all call `showActionToast(...)` and nothing else | Each needs either a real implementation (tracked against the PRD item it maps to) or removal — see detailed table below |
+| P1-7 | **"Recalculate Ratios" fakes a computation with a timer** | `FinancialSpreadingACOS.tsx:4016` | `setCalculating(true); window.setTimeout(() => setCalculating(false), 550)` — a 550ms fake spinner, no actual recalculation | Once ratios are computed from live data (P1-4) and the formula engine (PRD #16) exists, this button should trigger a real recompute, not a timer |
+| P1-8 | **Collaborator avatars imply real-time multi-user presence that doesn't exist** | `FinancialSpreadingACOS.tsx:3795-3819` | Hardcoded `["SW", "MR", "JK"]` initials shown on every case, regardless of who's actually viewing/assigned | Either wire to real assigned-analyst/observer data (from P0-1's user model) or remove until presence tracking (SSE channel, [Technical Architecture §8](TECHNICAL_ARCHITECTURE.md#8-frontend-architecture-changes)) is built |
+| P1-9 | **"Assign Reviewer," "Borrower notification queued," "Doc request reminder sent" all claim an action that never happens** | `FinancialSpreadingACOS.tsx:4371, 3396, 6387` | Toast text implies an email/assignment was sent; nothing is persisted or dispatched | Directly superseded by PRD #1 (auto-assignment), #7 (reminders), #8 (agentic exception handling) — real implementations, not relabeling |
+
+### P1-6 detail — toast-only menu actions
+
+| Action | Location | Fix path |
+|---|---|---|
+| View document | `~6789` | Real PDF viewer wired to `case_documents`/object storage (Technical Architecture §6) |
+| Re-classify document | `~6790` | Wire to document classifier from PRD #2 |
+| Export document list | `~6658` | Real manifest export (simple CSV of `case_documents`, low effort once DB exists) |
+| Escalate to Risk Officer | `~4018` | Real notification dispatch (PRD #7 infra) |
+| Assign reviewer | `~4371` | Real assignment write + notification (PRD #1) |
+| Request revisions | `~4372` | Must actually write an `overrides_audit_log`/comment record, not just claim to |
+| Print preview | `~4373` | Call `window.print()` on a real print-formatted view, or route to the real PDF export (P1-1) |
+| View older recommendations | `~6025` | Requires a recommendation-history table — low priority; consider cutting the affordance if not on the near-term roadmap |
+
+## P2 — Polish / consistency
+
+| # | Issue | Location | Fix |
+|---|---|---|---|
+| P2-1 | **Gate re-sign is blocked by session-scoped state, not a real immutability guarantee** | `FinancialSpreadingACOS.tsx:7111, 7142, 7177, 7219` | Correct *behavior* (gates shouldn't be re-signable), but today it's enforced by a session Set, not a database constraint — becomes correct automatically once P0-1 lands; no separate design needed |
+| P2-2 | **Backend README's claim "without keys, deterministic SOP logic; with keys, LLM reasoning" is not fully true** | `backend/graph/nodes/{mapping,decision}.py` | No LLM branch exists in these nodes even when a key is present — either implement the LLM path or correct the README so it doesn't overstate current capability |
+| P2-3 | **Excel/PDF export "(demo)" labeling is honest but the underlying gap should be tracked, not just labeled** | `FinancialSpreadingACOS.tsx:3730` | Covered by P1-1/P1-2 — listed here only to note the current UI is at least *honest* about being a placeholder, unlike most of the P1-6 items which are not labeled "(demo)" |
+
+---
+
+## Not a defect — confirmed correct behavior
+
+The audit also checked several places that *look* like bugs but are intentional and correct, so they're explicitly out of scope for remediation:
+
+- Gate sign buttons disabling after signing (audit immutability, by design — becomes DB-enforced per P2-1)
+- Mapping page Next/Previous pagination disabling at bounds (real pagination logic)
+- "Save comment" disabled on empty input (real validation)
+- Toasts auto-clearing after ~2.8s (correct — toasts are meant to be ephemeral, unlike the P1-6 items whose *only* effect is the toast)
+
+---
+
+## Review nodes not fully audited
+
+The initial audit did not get full detail on `backend/graph/nodes/review.py`, `risk.py`, `memo.py`, and `sentinel.py` — flag these for a follow-up pass before Phase 2 of the [Roadmap](ROADMAP.md) to confirm whether they have the same "no LLM branch even with a key" gap as `mapping.py`/`decision.py` (P2-2).
