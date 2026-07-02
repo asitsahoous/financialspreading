@@ -56,7 +56,14 @@ app/
 │   │   ├── sopPolicy.tsx          # Credit Policy SOP fixture + viewer components
 │   │   ├── ui.tsx                 # UI primitives (Canvas API shim)
 │   │   ├── theme.ts               # Figma BMO light tokens
-│   │   └── state.ts               # Session-persisted demo state
+│   │   ├── state.ts               # Session-persisted demo state
+│   │   └── financials/            # Live financial-spreading engine (Meridian Foods)
+│   │       ├── taxonomy.ts        # Chart of accounts: source vs calculated nodes + dependsOn
+│   │       ├── dataset.ts         # Generated 3-statement model, FY2022–25, ties out; 1 seeded defect
+│   │       ├── engine.ts          # computeValues / runIntegrityChecks / lineageFor / formatting
+│   │       ├── analytics.ts       # Units, YoY/CAGR, ratio thresholds, health scorecard
+│   │       ├── SourceDocument.tsx # Rendered clickable statement pages (cell+page lineage)
+│   │       └── MeridianSpread.tsx # Master-DB workspace: Spread/Trends/Ratios/Health/Source tabs
 │   ├── main.tsx
 │   └── index.css
 ├── netlify.toml                   # SPA redirect for deploy
@@ -68,7 +75,17 @@ app/
 1. **Command Center** — overnight agent queues, trust footers, agent queue table  
 2. **Insight** — agent/trust KPIs, active cases table, Sentinel alerts, charts  
 3. **Cases** — lifecycle rail, stage trace, workspaces, Trust Inspector, runtime log  
-4. **Agents** — catalog + last-24h activity strip  
+4. **Financial Spread** — Meridian Foods master financial database: period-column spread standardised to the ACOS chart of accounts, cell+page lineage, calculated-value dependency drill, in-cell correction with rationale (live recompute), cross-statement integrity checks, computed trust score, and Trends / Ratios / Health analytics  
+5. **Agents** — catalog + last-24h activity strip  
+
+### Financial Spread — how "real" it is
+
+No backend, but the spreading is a genuine deterministic model, not fixtures:
+- **Taxonomy-constrained extraction** — a chart of accounts (`taxonomy.ts`) decides what is a *source* value vs a *calculated* one; calculated nodes are recomputed by the engine, never trusted from the page.
+- **Ties out** — the generated dataset (`dataset.ts`) is internally consistent (BS balances, CF ties to cash, NI ties, RE rolls) across FY2022–FY2025, with one deliberately seeded OCR defect (FY2025 Inventory) that breaks the balance sheet until corrected.
+- **Lineage** — every value traces to its exact source page + cell; calculated values drill to their dependencies.
+- **Human-in-the-loop** — correct any cell with a required rationale; dependents recompute live, integrity re-runs, and the edit is logged to the change history.
+- **Measurable trust** — the trust score is computed from coverage + human-verification + open exceptions + integrity, and moves as you correct/verify.
 
 ### Interactive demo actions
 

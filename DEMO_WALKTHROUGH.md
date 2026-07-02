@@ -23,6 +23,7 @@ A plain-language guide for presenting the demo. No engineering background requir
 | **Command Center** | Morning queue — what needs your attention |
 | **InSight** | Portfolio view (note the capital **S** — not "Insight") |
 | **Cases** | Full case list and case workspaces |
+| **Financial Spread** | Master financial database for a borrower (Meridian Foods) — period-column spread, lineage, in-cell edit, trends/ratios/health, measurable trust |
 | **Agents** | Catalog of the 10 demo agents |
 
 Other useful buttons in the top bar: **Trust Layer** (explains the trust model), **Credit Policy** (opens the SOP viewer).
@@ -61,7 +62,7 @@ Do the 5-minute Walmart path first, then add the exception story.
 | 1 | **Command Center** tab | Northern Retail in the **Critical** column |
 | 2 | **Resolve completeness** | Northern Retail case opens at **Intake** stage |
 | 3 | Document table | 2 received, **7 Missing** (red pills). Header shows **02/09 Documents Uploaded** |
-| 4 | **↑ Upload** *(or **Mark received (demo)** on each missing row)* | Each click marks the next missing doc. Toast shows progress (e.g. "3/9 documents") |
+| 4 | **↑ Upload file** on a row *(pick a real file from your computer)*, or **Quick-fill next (demo)** for a fast run-through | Real upload shows the actual filename + size; quick-fill uses synthetic demo data. Toast shows progress (e.g. "3/9 documents") |
 | 5 | After all **9/9** received | Blue callout: "All documents received — Gate 1 sign-off required" |
 | 6 | **Sign Gate 1 — Approve document set** | Toast: "Gate 1 signed — pipeline unlocked". Stage advances |
 | 7 | Switch to **Review** on the left rail | **Blue banner:** "Spreading template: Walmart FY2025 10-K (Northern Retail intake complete)" — this is intentional for demo depth |
@@ -77,6 +78,32 @@ Do the 5-minute Walmart path first, then add the exception story.
 | 10 | **Sign Gate 3** → **Credit Memo** → **Sign Gate 4** → **Decision** → **Sign Gate 5** | Full lifecycle through committee sign-off |
 | 11 | **InSight** tab | Portfolio KPIs, covenant chart, active cases table |
 | 12 | **Agents** tab | Ten named agents and last-24h activity |
+
+---
+
+## Financial Spread — the master database deep-dive (Meridian Foods)
+
+This is the newest and deepest surface. It shows **Trust** and **Agent-first** on the actual spreading grid where S&P, Moody's, and Evalueserve compete.
+
+Click the **Financial Spread** tab. You land on **Meridian Foods Co.** — one borrower whose statements are standardised into a single **master financial database** and shown as period columns.
+
+| Step | Click this | You should see |
+|------|------------|----------------|
+| 1 | **Financial Spread** tab | Meridian Foods header + a **trust ribbon** (Trust score, Human-verified, Open exceptions, Integrity, Lineage). A **red integrity banner**: "Balance sheet balances: off by 23,670" |
+| 2 | Look at the **Spread** grid | Income Statement / Balance Sheet / Cash Flow with **FY2023–FY2025 columns** — side-by-side like Yahoo Finance / Capital IQ. **Inventory FY2025** is red (flagged) |
+| 3 | **＋ Ingest prior-year statement (FY2022)** | A new **FY2022 column** appears — the master database grew |
+| 4 | **Unit** toggle (Auto / K / MM / B) and **Order** | Numbers reformat; column order flips |
+| 5 | Click the red **Inventory FY2025** value | A **lineage strip** opens: source page 2, the exact cell, low confidence, agent note ("source shows 26,300, read 2,630") |
+| 6 | Type **26300**, add a **rationale**, click **Save correction** | Subtotals/totals/ratios **recompute live**, the integrity banner turns **green**, the exception clears, and the **Trust score jumps (≈27% → 65%)**. A **change-history** line is logged |
+| 7 | Click a **calculated** value (e.g. a total or Current Ratio) | Its **formula expands** and it drills to the source values it depends on |
+| 8 | **Trends** tab | YoY growth + CAGR per line |
+| 9 | **Ratios** tab | Ratios across periods vs **policy covenants** (pass/warn/fail) with § links |
+| 10 | **Health** tab | Composite **financial-health grade** (A–E) with liquidity/leverage/coverage/profitability pillars |
+| 11 | **Source & Lineage** tab | The rendered borrower statement pages; click cells to trace both directions |
+
+**One-liner for the audience:** "Every number traces to a source cell, every calculation traces to its inputs, the statements check themselves, and trust is a number you can audit — that's what we add on top of the like-for-like spread the incumbents sell."
+
+**Note:** The Financial Spread state (ingested periods, corrections, verifications) persists for the browser session and is cleared by **Reset demo**.
 
 ---
 
@@ -98,7 +125,7 @@ Same fix — resolve the Total Assets exception first. The app will switch you t
 
 ### "Northern Retail won't let me review the spread"
 
-**Not broken.** Northern Retail is blocked at **Gate 1** until all 9 documents are marked received. Use **↑ Upload** or **Mark received (demo)** seven times, then sign Gate 1.
+**Not broken.** Northern Retail is blocked at **Gate 1** until all 9 documents are marked received. Use **↑ Upload file** (real file picker) or **Quick-fill next (demo)** seven times, then sign Gate 1.
 
 ### "Northern Retail shows Walmart's 10-K"
 
@@ -136,7 +163,7 @@ Ensure the Netlify SPA redirect is configured (`app/netlify.toml`). For local de
 |------------------------------------------|-------------------------|
 | All five human gates (sign-off → audit log) | No real backend or database |
 | Trust Inspector — Accept / Override / correction | PDF export → `.txt` file |
-| Northern Retail doc upload / Mark received | InSight Assist chat replies |
+| Real file upload (↑ Upload file) — actual filename + size captured | InSight Assist chat replies |
 | Lifecycle rail — stage traces, runtime log | Connector API calls (fixture data) |
 | SOP viewer — § links open Credit Policy | AutoWest, Costco, Target → Walmart template |
 | Validate Ratios tabs and sparklines | Case creation → nearest template |
@@ -154,7 +181,7 @@ Ensure the Netlify SPA redirect is configured (`app/netlify.toml`). For local de
 | **Command Center** | Trust Layer | Slide-over: trust fabric, gates, agents |
 | **Cases** (list) | Negotiate on Walmart row | Walmart Review workspace |
 | **Cases** (workspace) | Case switcher pills | Toggle Walmart ↔ Northern Retail |
-| **Cases** → Intake | ↑ Upload / Mark received (demo) | Docs flip to Received; count toward 9/9 |
+| **Cases** → Intake | ↑ Upload file (real picker) / Quick-fill next (demo) | Docs flip to Received; count toward 9/9 |
 | **Cases** → Intake | Sign Gate 1 | Unlocks pipeline (Northern Retail) |
 | **Cases** → Review | Exceptions (1) → Inspect → Accept mapping | Exception cleared |
 | **Cases** → Review | Sign Gate 2 | Moves to Assessment |

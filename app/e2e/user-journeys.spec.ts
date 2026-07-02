@@ -231,4 +231,45 @@ test.describe("Financial analyst user journeys", () => {
     await expect(page.getByText("Gate 2 pending").first()).toBeVisible();
     await expect(page.getByRole("button", { name: /Exceptions \(1\)/ })).toBeVisible();
   });
+
+  test("Journey 17 — Financial Spread master database + live integrity", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Financial Spread" }).click();
+    await expect(page.getByText("Master financial database")).toBeVisible();
+    await expect(page.getByTestId("integrity-banner")).toContainText("Integrity check failed for FY2025");
+    await expect(page.getByTestId("integrity-banner")).toContainText("off by 23,670");
+    // period columns present in the standardised spread
+    await expect(page.getByTestId("cell-IS.REVENUE-FY2023")).toBeVisible();
+    await expect(page.getByTestId("cell-IS.REVENUE-FY2025")).toBeVisible();
+  });
+
+  test("Journey 18 — In-cell correction recomputes and re-balances", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Financial Spread" }).click();
+    await page.getByTestId("cell-BS.INVENTORY-FY2025").click();
+    await page.getByTestId("edit-value").fill("26300");
+    await page.getByTestId("edit-rationale").fill("Source page 2 shows 26,300 — OCR scale error corrected");
+    await page.getByTestId("save-correction").click();
+    await expect(page.getByTestId("integrity-banner")).toContainText("Integrity checks pass for FY2025");
+    await expect(page.getByText("Change history (case lifecycle)")).toBeVisible();
+  });
+
+  test("Journey 19 — Ingest prior-year statement grows the master DB", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Financial Spread" }).click();
+    await expect(page.getByTestId("cell-IS.REVENUE-FY2022")).toHaveCount(0);
+    await page.getByTestId("ingest-fy2022").click();
+    await expect(page.getByTestId("cell-IS.REVENUE-FY2022")).toBeVisible();
+  });
+
+  test("Journey 20 — Trends, Ratios, Health analytics tabs render", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Financial Spread" }).click();
+    await page.getByTestId("subtab-trends").click();
+    await expect(page.getByText("Trend — YoY growth")).toBeVisible();
+    await page.getByTestId("subtab-ratios").click();
+    await expect(page.getByText("Policy threshold")).toBeVisible();
+    await page.getByTestId("subtab-health").click();
+    await expect(page.getByText("Composite health", { exact: false })).toBeVisible();
+  });
 });

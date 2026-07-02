@@ -163,7 +163,33 @@
 
 **Closing line (30 sec):**
 
-> "Evalueserve sells accuracy. Moody's sells integrated content. DXP sells orchestration you can see — ten named agents, five human gates, trust from portfolio alert to cell-level lineage. Agents saved 2.5 days on this case alone. Across 42 cases this month, that's 312 hours. That's the platform story."
+> "S&P and Moody's standardise to their chart of accounts so you can compare like-for-like. Evalueserve sells accuracy. We do all of that — the master database, the period-column spread, the ratios — and then we go further: every number traces to a source cell, every calculation traces to its inputs, the statements check themselves with live integrity, and trust is a number you can audit. Ten named agents, five human gates, portfolio alert to cell-level lineage. That's orchestration you can see."
+
+---
+
+## Story 8 — Financial Spread: master database, cell-level lineage & measurable trust (4 min)
+
+**Tab: Financial Spread** (borrower: Meridian Foods Co.)
+
+This is the deepest proof of the two board tenets — **Agents operate, Trust is measurable** — on the actual spreading surface where competitors compete (S&P ProSpread, Moody's CreditLens, Evalueserve Spreadsmart).
+
+| Step | Action | Talk track |
+|------|--------|------------|
+| 1 | Click **Financial Spread** → land on **Meridian Foods Co.** | "One borrower, one **master financial database**. Every statement we ingest — any quarter, any year — is standardised by the Mapping Agent to the ACOS chart of accounts and mapped into these period columns. This is the 'compare like-for-like' grid S&P and Moody's sell — but watch what we put on top of it." |
+| 2 | Point to the **period columns** (FY2023–FY2025) | "Side-by-side comparison, exactly like Capital IQ or a Yahoo Finance grid. Income statement, balance sheet, cash flow — all three, all periods, one source of truth." |
+| 3 | Click **＋ Ingest prior-year statement (FY2022)** | "Add another filing and it maps straight into the master database — a new column appears. The database grows; the taxonomy keeps it apples-to-apples." |
+| 4 | Toggle **Unit** (Auto / K / MM / B) and **Order** | "Analyst-grade ergonomics — units and ordering like any terminal they already use." |
+| 5 | Point to the **red integrity banner** — "Balance sheet balances: off by 23,670" | "Here's the difference. The platform runs **cross-statement integrity checks live** — does the balance sheet balance, does cash flow tie to cash, does net income tie across statements. It caught a discrepancy the extraction agent introduced. Moody's and S&P give you a spread; we tell you whether the spread is internally consistent." |
+| 6 | In the grid, point to **Inventory FY2025** in red (flagged) | "The Mapping Agent flagged one cell at low confidence — an OCR scale error. Every other number ties. The agent didn't hide it or average it away; it surfaced the one thing that needs a human." |
+| 7 | Click the Inventory cell → **Lineage strip** opens | "Click any value and it traces to its exact **page and source cell** — the source document shows 26,300, the extraction read 2,630. That's cell-level lineage, not 'page 43'." |
+| 8 | Type the corrected value + a **rationale**, click **Save correction** | "I correct it in place with a documented reason. Watch: the subtotals, totals, ratios, and the integrity banner **recompute live** — the balance sheet re-balances, the exception clears, and the **Trust score rises from 27% to 65%**. The edit is written to the case lifecycle with who/when/why." |
+| 9 | Point to the **Trust ribbon** (Trust score, Human-verified, Open exceptions, Integrity, Lineage) | "Trust is a **computed, auditable number** — not a badge. Coverage, human-verification, open exceptions, integrity, and 100% lineage. You can see exactly how it's derived." |
+| 10 | Click a **calculated value** (e.g. Current Ratio) | "Calculated values are never trusted from the page — the engine derives them and drills to their dependencies: Current Ratio → Total Current Assets → Cash, AR, Inventory, Prepaid → each a source cell. That's a rationale tree from a ratio down to a cell." |
+| 11 | Click **Trends** then **Ratios** then **Health** | "Trend analysis (YoY, CAGR), ratios vs. your policy covenants with pass/warn/fail, and a composite financial-health grade — all computed off the same master database, all traceable back to source." |
+
+**Pillar proof:** Agentic — agents standardise, map, calculate, and flag. Trust — every value has cell+page lineage, every calculation traces to its inputs, every human edit is logged, and trust is a live computed score. Integrity checks are a differentiator none of the incumbents foreground.
+
+**One-liner:** "Evalueserve and Moody's give you a spread and an audit log. We give you a spread where every number traces to a source cell, every calculation traces to its inputs, the statements check themselves, and trust is a number you can audit."
 
 ---
 
@@ -206,6 +232,9 @@
 | 6 — Connected decision | 2:30 | 13:30 | Agentic + Connector trust |
 | 7 — Portfolio ROI close | 1:30 | 15:00 | Both @Portfolio |
 | Closing | 0:30 | **15:00** | — |
+| 8 — Financial Spread deep-dive *(optional / on request)* | 4:00 | **19:00** | Both @Spread — master DB, lineage, integrity, measurable trust |
+
+**15-minute core** = Stories 1–7 + close. Run **Story 8** when the board asks "how does the actual spreading compare to Moody's / S&P?" — it is the deepest proof of the two tenets on the competitive battleground.
 
 ---
 
@@ -213,9 +242,11 @@
 
 | Question | Answer |
 |----------|--------|
-| vs Moody's Spreading & Scoring | "Moody's has audit logs — we have lifecycle rails. Click a stage, see the named agent, see the structured reasoning, see the gate. That's governance you can demonstrate, not document." |
-| vs Evalueserve Spreadsmart | "They claim 95% accuracy. We show which 5% needs you, why it was flagged, from which page, by which agent, under which SOP clause. Accuracy is table stakes; lineage is the differentiator." |
-| vs generic AI copilots | "Copilots chat. ACOS orchestrates — ten named agents, five human gates, one portfolio-to-case thread, connector bundle with masked entity IDs. The agent is in the workflow, not beside it." |
+| vs Moody's CreditLens / Spreading & Scoring | "CreditLens standardises to Moody's chart of accounts and gives you a spreading grid and an audit log. We match the grid — master database, period columns, like-for-like — then add cell+page lineage, live cross-statement integrity, and lifecycle rails. Click a stage, see the named agent, the structured reasoning, the gate. Governance you demonstrate, not document." |
+| vs S&P Global ProSpread / Capital IQ | "ProSpread maps PDFs to the Capital IQ chart of accounts for an apples-to-apples view — same standardisation we do. Where we differ: every extracted value clicks through to its exact source cell, every calculated value drills to its inputs, and the balance sheet and cash flow check themselves live. Standardisation is table stakes; provable lineage and self-checking integrity are the wedge." |
+| vs Evalueserve Spreadsmart | "They claim near-100% accuracy with templates and taxonomy. We show which values need you, why each was flagged, from which page and cell, by which agent, under which SOP clause — and a trust score you can audit. Accuracy is table stakes; measurable trust is the differentiator." |
+| vs generic AI copilots | "Copilots chat. ACOS orchestrates — ten named agents, five human gates, one portfolio-to-case thread, a master financial database with cell-level lineage. The agent is in the workflow, not beside it." |
+| Is 'trust' just a slogan? | "No — it's computed. On the Financial Spread tab the trust score is derived from extraction coverage, human-verification rate, open exceptions, and live integrity checks. Correct a flagged cell and watch it move. It's a number with a visible formula, not a badge." |
 | How does it scale? | "The Cases list shows 9 borrowers with agent-calculated health scores and extraction confidence. Command Center shows parallel agent work across cases simultaneously. The orchestrator routes; analysts govern." |
 | What about hallucination? | "Every memo paragraph cites its API source with a connector ID and timestamp. The Trust Inspector shows the exact OCR page and SOP clause. Humans sign off at five gates before the decision is reached." |
 | What's the integration story? | "Connector Sync Agent: Experian and Equifax via EIN, D&B via DUNS, AML/KYC via EIN and SSN/ITIN for beneficial owners, Bloomberg for peer data. SOP rules are configurable — upload the institution's credit policy, the agents apply it." |
@@ -240,6 +271,7 @@
 | **Cases → Northern Retail** | Gate 1 blocked; 7 missing docs with classification badges; override logged; pipeline held | 4 |
 | **InSight** | InSight Assist panel (Sentinel briefing); agent KPI row; active cases table; In Focus banner; Sentinel alerts; covenant chart | 7 |
 | **Agents** | 10 agent cards; last-24h activity strip; connector strategy | Appendix A |
+| **Financial Spread** | Master database with period columns; ingest prior-year; unit/order toggles; Spread / Trends / Ratios / Health / Source & Lineage tabs; live integrity banner; trust ribbon; in-cell edit with rationale | 8 |
 
 ---
 
@@ -262,3 +294,9 @@
 | **Launch Spread ↗** | Review stage | Opens full credit memo report modal |
 | **All queue cards** | Command Center | Every card has a drillable button that opens the correct case + stage |
 | **Trust Layer panel** | Tab bar (all views) | Read-only model: five gates, ten agents, policy anchors, competitor differentiation |
+| **Master financial database** | Financial Spread tab | Period-column spread standardised to the ACOS chart of accounts; ingest more statements → more columns |
+| **Cell + page lineage** | Financial Spread → click any value | Source values highlight their exact origin cell on the rendered statement page; calculated values drill to dependencies |
+| **In-cell correction** | Financial Spread → click a source value | Edit value + required rationale → recomputes dependents live, re-runs integrity, logs to change history |
+| **Live integrity checks** | Financial Spread (always visible) | Balance-sheet-balances, cash-flow-ties, net-income-ties — computed per period; flags the seeded FY2025 defect |
+| **Computed trust score** | Financial Spread trust ribbon | Coverage + human-verified + open exceptions + integrity → auditable % that moves as you correct/verify |
+| **Trends / Ratios / Health** | Financial Spread sub-tabs | YoY & CAGR; ratios vs policy covenants (pass/warn/fail); composite health grade — all off the master DB |

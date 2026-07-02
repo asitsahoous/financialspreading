@@ -21,6 +21,7 @@ import {
 import { useCallback, useEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { resetDemoSession, showActionToast } from "./state";
 import { renderTextWithSopLinks, SopLink, SopViewerPanel } from "./sopPolicy";
+import { MeridianSpreadView } from "./financials/MeridianSpread";
 
 /** Minimal shape used for click-outside checks — avoids importing React.MouseEvent, which
  *  is not exported the same way across the app's Vite/@types-react setup and the Canvas
@@ -705,6 +706,7 @@ function DxpShell({
     { id: "command", label: "Command Center" },
     { id: "portfolio", label: "InSight" },
     { id: "caselist", label: "Cases" },
+    { id: "spreading", label: "Financial Spread" },
     { id: "agents", label: "Agents" },
   ];
   return (
@@ -1651,6 +1653,7 @@ type IntakeDocRow = {
   uploadedBy?: string;
   uploadedOn?: string;
   sizeKb?: number;
+  uploadedFileName?: string;
 };
 
 type EntityIdType = "EIN" | "SSN" | "ITIN" | "DUNS";
@@ -1834,7 +1837,10 @@ const NORTHERN_RETAIL_MEMO_SECTIONS: MemoSection[] = [
 
 type GateSignKind = "gate1-sign" | "gate2-sign" | "gate3-sign" | "gate4-sign" | "gate5-sign";
 
-type IntakeDocOverride = Pick<IntakeDocRow, "received" | "uploadedBy" | "uploadedOn" | "sizeKb" | "classification">;
+type IntakeDocOverride = Pick<
+  IntakeDocRow,
+  "received" | "uploadedBy" | "uploadedOn" | "sizeKb" | "classification" | "uploadedFileName"
+>;
 type IntakeDocOverridesByCase = Partial<Record<CaseId, Record<string, IntakeDocOverride>>>;
 
 type DemoPortfolioContext = { entity: string; concern: string } | null;
@@ -1931,7 +1937,7 @@ const CASES: Record<CaseId, CaseDefinition> = {
   },
 };
 
-type View = "command" | "portfolio" | "caselist" | "case" | "agents";
+type View = "command" | "portfolio" | "caselist" | "case" | "agents" | "spreading";
 
 // ─── Case list data ──────────────────────────────────────────────────────────
 
@@ -6039,6 +6045,35 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
   );
   const gate1Signed = signedGateActions.has("gate1-sign");
   const isNorthern = caseId === "northern-retail";
+  const missingNow = totalIntakeDocs - receivedCount;
+  const gate1SignedAt = caseAudit.find((e) => e.gateAction === "gate1-sign")?.time;
+  const mergedTraces: Record<StageId, StageTrace> = isNorthern
+    ? {
+        ...caseDef.traces,
+        intake: {
+          ...caseDef.traces.intake,
+          status: gate1Signed ? "complete" : "blocked",
+          timestamp: gate1Signed ? (gate1SignedAt ?? caseDef.traces.intake.timestamp) : caseDef.traces.intake.timestamp,
+          summary: gate1Signed
+            ? `${receivedCount} of ${totalIntakeDocs} documents received — Gate 1 signed, extraction unlocked`
+            : missingNow === 0
+              ? `${receivedCount} of ${totalIntakeDocs} documents received — Gate 1 sign-off required`
+              : `${receivedCount} of ${totalIntakeDocs} documents received — ${missingNow} missing per SOP §4.2`,
+          actors: caseDef.traces.intake.actors.map((a) =>
+            a.kind === "human"
+              ? {
+                  ...a,
+                  role: gate1Signed
+                    ? "Signed Gate 1 — document set complete"
+                    : missingNow === 0
+                      ? "All documents received — ready to sign Gate 1"
+                      : "Cannot sign Gate 1 — awaiting missing documents",
+                }
+              : a,
+          ),
+        },
+      }
+    : caseDef.traces;
   const northernPipelineUnlocked = isNorthern && gate1Signed && receivedCount === totalIntakeDocs;
   const memoSadPath = isNorthern && !northernPipelineUnlocked;
   const memoContent = isNorthern && northernPipelineUnlocked ? CASES.walmart : caseDef;
@@ -6117,7 +6152,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
   };
 
   const markDocReceived = useCallback(
-    (docName: string) => {
+    (docName: string, file?: File) => {
       const doc = mergedIntakeDocs.find((d) => d.name === docName);
       if (!doc || doc.received) return;
       const now = formatIntakeTimestamp();
@@ -6129,18 +6164,37 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
             received: true,
             uploadedBy: "J. Martinez (Credit Analyst)",
             uploadedOn: now,
-            sizeKb: 240 + Math.floor(Math.random() * 400),
+            sizeKb: file ? Math.max(1, Math.round(file.size / 1024)) : 240 + Math.floor(Math.random() * 400),
             classification: intakeClassificationForDoc(doc),
+            uploadedFileName: file?.name,
           },
         },
       }));
       const nextCount = receivedCount + 1;
       showActionToast(
-        `${docName} received — ${nextCount}/${totalIntakeDocs} documents per SOP §4.2`,
+        file
+          ? `${file.name} uploaded for ${docName} — ${nextCount}/${totalIntakeDocs} documents per SOP §4.2`
+          : `${docName} received — ${nextCount}/${totalIntakeDocs} documents per SOP §4.2`,
       );
     },
     [caseId, mergedIntakeDocs, receivedCount, setIntakeDocOverrides, totalIntakeDocs],
   );
+
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const handleFileInputChange = useCallback(
+    (docName: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file) return;
+      markDocReceived(docName, file);
+    },
+    [markDocReceived],
+  );
+
+  const triggerFilePicker = useCallback((docName: string) => {
+    fileInputRefs.current[docName]?.click();
+  }, []);
 
   const markNextMissingDoc = useCallback(() => {
     const nextMissing = mergedIntakeDocs.find((d) => !d.received);
@@ -6157,7 +6211,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
 
   const mergedLog: RuntimeLogEntry[] = [...caseDef.runtimeLog, ...caseAudit];
   const newEntryIds = new Set(caseAudit.map((e) => e.id));
-  const activeTrace = caseDef.traces[stageId];
+  const activeTrace = mergedTraces[stageId];
   const selectedRow = spreadMappingData.find((r) => r.field === selectedField) ?? null;
   const mappingQuery = mappingSearch.trim().toLowerCase();
   const filteredMapping = spreadMappingData.filter(
@@ -6463,7 +6517,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
       </div>
 
       <Row gap={12} align="start" style={{ alignItems: "stretch" }}>
-        <LifecycleRail traces={caseDef.traces} activeId={stageId} onSelect={setStageId} theme={theme} />
+        <LifecycleRail traces={mergedTraces} activeId={stageId} onSelect={setStageId} theme={theme} />
 
         <Stack gap={12} style={{ flex: 1, minWidth: 0 }}>
           <StageTracePanel trace={activeTrace} theme={theme} onOpenSop={openSop} />
@@ -6526,14 +6580,15 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                         );
                       })}
                     </Row>
-                    <Row justify="end">
+                    <Row justify="end" gap={8}>
+                      <Text size="small" tone="quaternary">Use ↑ Upload file on a row to attach a real document</Text>
                       <Button
                         variant="ghost"
                         style={{ height: 26, fontSize: 11 }}
                         data-testid="intake-upload-button"
                         onClick={() => markNextMissingDoc()}
                       >
-                        ↑ Upload
+                        Quick-fill next (demo)
                       </Button>
                     </Row>
                     {isNorthern && !gate1Signed && missingDocs > 0 && (
@@ -6562,6 +6617,9 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                             <Stack gap={2}>
                               <Text size="small" weight="semibold">{doc.name}</Text>
                               <SopLink section={doc.sopRef} appliedTo={doc.name} onOpen={openSop} />
+                              {doc.uploadedFileName && (
+                                <Text size="small" tone="quaternary">Uploaded: {doc.uploadedFileName}</Text>
+                              )}
                             </Stack>
                           </Row>,
                           doc.classification ? (
@@ -6578,14 +6636,34 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                           doc.uploadedOn ?? "—",
                           doc.uploadedBy ?? "—",
                           !doc.received ? (
-                            <Button
-                              variant="ghost"
-                              style={{ height: 24, fontSize: 10 }}
-                              data-testid={`mark-received-${doc.name.replace(/\s+/g, "-").toLowerCase()}`}
-                              onClick={() => markDocReceived(doc.name)}
-                            >
-                              Mark received (demo)
-                            </Button>
+                            <Row gap={6} align="center">
+                              <input
+                                ref={(el) => {
+                                  fileInputRefs.current[doc.name] = el;
+                                }}
+                                type="file"
+                                accept=".pdf,.doc,.docx,.xls,.xlsx,.csv"
+                                style={{ display: "none" }}
+                                data-testid={`upload-input-${doc.name.replace(/\s+/g, "-").toLowerCase()}`}
+                                onChange={handleFileInputChange(doc.name)}
+                              />
+                              <Button
+                                variant="primary"
+                                style={{ height: 24, fontSize: 10 }}
+                                data-testid={`upload-file-${doc.name.replace(/\s+/g, "-").toLowerCase()}`}
+                                onClick={() => triggerFilePicker(doc.name)}
+                              >
+                                ↑ Upload file
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                style={{ height: 24, fontSize: 10 }}
+                                data-testid={`mark-received-${doc.name.replace(/\s+/g, "-").toLowerCase()}`}
+                                onClick={() => markDocReceived(doc.name)}
+                              >
+                                Mark received (demo)
+                              </Button>
+                            </Row>
                           ) : (
                             <ActionsMenu
                               theme={theme}
@@ -8002,6 +8080,9 @@ export default function FinancialSpreadingACOS() {
         {view === "caselist" && <CasesListView theme={theme} openCase={openCase} onOpenTrustLayer={openTrustLayer} />}
         {view === "case" && <CaseWorkspaceView theme={theme} />}
         {view === "agents" && <AgentCatalogView theme={theme} onOpenTrustLayer={openTrustLayer} />}
+        {view === "spreading" && (
+          <MeridianSpreadView onOpenSop={(section, appliedTo) => setSopViewer({ section, appliedTo })} />
+        )}
       </DxpShell>
       <ActionToastBanner theme={theme} />
       <Text size="small" tone="quaternary" style={{ padding: "0 16px" }}>
