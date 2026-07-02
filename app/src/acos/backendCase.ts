@@ -2,12 +2,13 @@
  * Adapter between the demo's two fixture case "roles" (walmart, northern-retail)
  * and real backend cases created via the FastAPI + LangGraph API (`acosApi`).
  *
- * Scope note: only Gate 1–5 sign-off is wired to the real backend here — gate
- * IDs map 1:1 with no naming ambiguity. Document intake, mapping/exceptions,
- * and Gate 5 decline/table stay on local fixture/session state for now: the
- * frontend's fixture document names (e.g. Walmart's "WLBOR", "WLBBSHEET")
- * don't match the backend's fixed 9-item SOP §4.2 manifest names at all, and
- * reconciling that is separate follow-up work (see docs/KNOWN_ISSUES.md).
+ * Scope note: Gate 1–5 sign-off, document intake, and the "Total Assets"
+ * mapping correction are wired to the real backend — CASES.walmart and
+ * CASES["northern-retail"]'s intakeDocs now use the exact same names as
+ * backend/graph/nodes/intake.py's SOP §4.2 manifest, so document names no
+ * longer need reconciling. The rest of the mapping/exceptions data and Gate
+ * 5 decline/table still stay on local fixture/session state — see
+ * docs/KNOWN_ISSUES.md for what's left and why.
  */
 import { acosApi, type CaseResponse, type GateRecord } from "../api/client";
 
@@ -105,6 +106,48 @@ export async function fetchBackendCase(caseId: string): Promise<CaseResponse | n
   }
 }
 
+export type BackendDocumentOverride = {
+  received: boolean;
+  uploadedBy?: string;
+  uploadedOn?: string;
+  sizeKb?: number;
+  classification?: string;
+  uploadedFileName?: string;
+};
+
+/** Full raw state includes `documents`, unlike the slim CaseResponse from getCase(). */
+export async function fetchBackendDocuments(caseId: string): Promise<Record<string, BackendDocumentOverride> | null> {
+  try {
+    const state = await acosApi.getCaseState(caseId);
+    const documents = (state.documents as
+      | Array<{
+          name: string;
+          received: boolean;
+          size_kb: number | null;
+          classification: string | null;
+          uploaded_by: string | null;
+          uploaded_on: string | null;
+          uploaded_file_name: string | null;
+        }>
+      | undefined) ?? [];
+    const byName: Record<string, BackendDocumentOverride> = {};
+    for (const doc of documents) {
+      if (!doc.received) continue;
+      byName[doc.name] = {
+        received: true,
+        uploadedBy: doc.uploaded_by ?? undefined,
+        uploadedOn: doc.uploaded_on ?? undefined,
+        sizeKb: doc.size_kb ?? undefined,
+        classification: doc.classification ?? undefined,
+        uploadedFileName: doc.uploaded_file_name ?? undefined,
+      };
+    }
+    return byName;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Persists a mapping accept/override to the real backend's Trust Inspector
  * endpoint (`POST /cases/{id}/overrides`). Field names are only wired for
@@ -124,6 +167,28 @@ export async function overrideBackendField(
   actor: string,
 ): Promise<CaseResponse> {
   return acosApi.overrideField(caseId, { field_name: fieldName, corrected_value: correctedValue, reason, actor });
+}
+
+/**
+ * Marks a document received on the real backend. Only meaningful for the
+ * canonical SOP §4.2 manifest names in TERM_LOAN_B_DOCS above — both
+ * CASES.walmart and CASES["northern-retail"] intakeDocs now use those exact
+ * names, so every document in either fixture can be wired.
+ */
+export async function receiveBackendDocument(
+  caseId: string,
+  docName: string,
+  actor: string,
+  sizeKb?: number,
+  classification?: string,
+  uploadedFileName?: string,
+): Promise<CaseResponse> {
+  return acosApi.receiveDocument(caseId, docName, {
+    actor,
+    size_kb: sizeKb,
+    classification,
+    uploaded_file_name: uploadedFileName,
+  });
 }
 
 export type BackendGateId = "gate1" | "gate2" | "gate3" | "gate4" | "gate5";

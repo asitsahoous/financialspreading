@@ -28,7 +28,9 @@ import {
   backendGatesToSignedKinds,
   ensureBackendCase,
   fetchBackendCase,
+  fetchBackendDocuments,
   overrideBackendField,
+  receiveBackendDocument,
   signBackendGate,
   type BackendCaseRole,
   type BackendGateId,
@@ -1913,11 +1915,19 @@ const CASES: Record<CaseId, CaseDefinition> = {
     traces: WALMART_TRACES,
     runtimeLog: WALMART_RUNTIME_LOG,
     mappingData: MAPPING_DATA,
+    // Names/sopRefs match backend/graph/nodes/intake.py's SOP_MANIFEST for
+    // "term_loan_b" exactly, so this list can be marked received on the real
+    // backend case via backendCase.ts instead of only local fixture state.
     intakeDocs: [
-      { name: "WLBOR", received: true, sopRef: "§4.2.2", classification: "Credit Application", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 1024 },
-      { name: "WLBBSHEET", received: true, sopRef: "§4.2.1", classification: "Balance Sheet", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 700 },
-      { name: "WLBIncome", received: true, sopRef: "§4.2.3", classification: "Income Statement", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 500 },
-      { name: "WLBCashFR", received: true, sopRef: "§4.2.4", classification: "Cash-Flow Report", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 500 },
+      { name: "10-K Annual Filing", received: true, sopRef: "§4.2.1", classification: "Annual Filing", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 1024 },
+      { name: "Credit Application", received: true, sopRef: "§4.2.2", classification: "Application", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 310 },
+      { name: "Q3 Cash Flow Statement", received: true, sopRef: "§4.2.3", classification: "Cash-Flow Report", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 500 },
+      { name: "Covenant Schedule", received: true, sopRef: "§4.2.4", classification: "Covenant Schedule", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 220 },
+      { name: "Auditor Letter", received: true, sopRef: "§4.2.5", classification: "Auditor Letter", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 180 },
+      { name: "Management Representation", received: true, sopRef: "§4.2.6", classification: "Management Representation", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 210 },
+      { name: "Intercompany Schedule", received: true, sopRef: "§4.2.7", classification: "Intercompany Schedule", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 340 },
+      { name: "Guarantor Financials", received: true, sopRef: "§4.2.8", classification: "Guarantor Financials", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 700 },
+      { name: "Collateral Appraisal", received: true, sopRef: "§4.2.9", classification: "Collateral Appraisal", uploadedBy: "Chloe Nile", uploadedOn: "04/07/2026", sizeKb: 980 },
     ],
     connectorFeeds: WALMART_CONNECTORS,
     memoSections: WALMART_MEMO_SECTIONS,
@@ -1942,9 +1952,11 @@ const CASES: Record<CaseId, CaseDefinition> = {
     traces: NORTHERN_RETAIL_TRACES,
     runtimeLog: NORTHERN_RETAIL_RUNTIME_LOG,
     mappingData: [],
+    // Names/sopRefs match backend/graph/nodes/intake.py's SOP_MANIFEST for
+    // "term_loan_b" exactly — see the matching comment on CASES.walmart above.
     intakeDocs: [
       { name: "Credit Application", received: true, sopRef: "§4.2.2", classification: "Application", uploadedBy: "Borrower Portal", uploadedOn: "Mar 17, 1:42 AM", sizeKb: 310 },
-      { name: "FY2024 Annual Report", received: true, sopRef: "§4.2.1", classification: "Annual Filing", uploadedBy: "Borrower Portal", uploadedOn: "Mar 17, 1:42 AM", sizeKb: 1980 },
+      { name: "10-K Annual Filing", received: true, sopRef: "§4.2.1", classification: "Annual Filing", uploadedBy: "Borrower Portal", uploadedOn: "Mar 17, 1:42 AM", sizeKb: 1980 },
       { name: "Q3 Cash Flow Statement", received: false, sopRef: "§4.2.3" },
       { name: "Covenant Schedule", received: false, sopRef: "§4.2.4" },
       { name: "Auditor Letter", received: false, sopRef: "§4.2.5" },
@@ -6153,14 +6165,31 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
     }
   }, []);
 
+  // Seeds intakeDocOverrides from the backend's real document-received state
+  // so a reload reflects the backend, not just this tab's session — the
+  // merge only ever adds `received: true` entries (see mergeIntakeDocs),
+  // never un-marks a document the fixture already shows as received.
+  const refreshBackendDocuments = useCallback(
+    async (id: string, forRole: CaseId) => {
+      const docs = await fetchBackendDocuments(id);
+      if (!docs) return;
+      setIntakeDocOverrides((prev) => ({
+        ...prev,
+        [forRole]: { ...(prev[forRole] ?? {}), ...docs },
+      }));
+    },
+    [setIntakeDocOverrides],
+  );
+
   useEffect(() => {
     let cancelled = false;
     setBackendCaseId(null);
-    ensureBackendCase(caseId as BackendCaseRole)
+    const role = caseId as BackendCaseRole;
+    ensureBackendCase(role)
       .then((id) => {
         if (cancelled) return;
         setBackendCaseId(id);
-        return refreshBackendGates(id);
+        return Promise.all([refreshBackendGates(id), refreshBackendDocuments(id, caseId)]);
       })
       .catch(() => {
         if (!cancelled) setBackendSyncError("Could not reach the ACOS backend — gate signatures won't be saved this session.");
@@ -6168,7 +6197,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
     return () => {
       cancelled = true;
     };
-  }, [caseId, refreshBackendGates]);
+  }, [caseId, refreshBackendGates, refreshBackendDocuments]);
 
   useEffect(() => {
     if (backendSyncError) showActionToast(backendSyncError);
@@ -6305,6 +6334,8 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
       const doc = mergedIntakeDocs.find((d) => d.name === docName);
       if (!doc || doc.received) return;
       const now = formatIntakeTimestamp();
+      const sizeKb = file ? Math.max(1, Math.round(file.size / 1024)) : 240 + Math.floor(Math.random() * 400);
+      const classification = intakeClassificationForDoc(doc);
       setIntakeDocOverrides((prev) => ({
         ...prev,
         [caseId]: {
@@ -6313,12 +6344,17 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
             received: true,
             uploadedBy: "J. Martinez (Credit Analyst)",
             uploadedOn: now,
-            sizeKb: file ? Math.max(1, Math.round(file.size / 1024)) : 240 + Math.floor(Math.random() * 400),
-            classification: intakeClassificationForDoc(doc),
+            sizeKb,
+            classification,
             uploadedFileName: file?.name,
           },
         },
       }));
+      if (backendCaseId) {
+        receiveBackendDocument(backendCaseId, docName, "J. Martinez (Credit Analyst)", sizeKb, classification, file?.name).catch(
+          () => setBackendSyncError(`"${docName}" received didn't reach the backend — it will not survive a reload.`),
+        );
+      }
       const nextCount = receivedCount + 1;
       showActionToast(
         file
@@ -6326,7 +6362,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
           : `${docName} received — ${nextCount}/${totalIntakeDocs} documents per SOP §4.2`,
       );
     },
-    [caseId, mergedIntakeDocs, receivedCount, setIntakeDocOverrides, totalIntakeDocs],
+    [backendCaseId, caseId, mergedIntakeDocs, receivedCount, setIntakeDocOverrides, totalIntakeDocs],
   );
 
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});

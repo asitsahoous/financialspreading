@@ -113,6 +113,13 @@ export interface FieldOverrideBody {
   actor: string;
 }
 
+export interface ReceiveDocumentBody {
+  actor: string;
+  size_kb?: number;
+  classification?: string;
+  uploaded_file_name?: string;
+}
+
 // ─── API calls ────────────────────────────────────────────────────────────────
 
 export const acosApi = {
@@ -142,6 +149,13 @@ export const acosApi = {
   /** Analyst field value override (Trust Inspector). */
   overrideField: (caseId: string, body: FieldOverrideBody) =>
     request<CaseResponse>(`/cases/${caseId}/overrides`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  /** Mark an intake document as received (upload or quick-fill). */
+  receiveDocument: (caseId: string, docName: string, body: ReceiveDocumentBody) =>
+    request<CaseResponse>(`/cases/${caseId}/documents/${encodeURIComponent(docName)}/receive`, {
       method: "POST",
       body: JSON.stringify(body),
     }),

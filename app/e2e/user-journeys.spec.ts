@@ -60,7 +60,7 @@ test.describe("Financial analyst user journeys", () => {
     await page.getByRole("button", { name: "Cases", exact: true }).click();
     await page.getByRole("button", { name: "Negotiate" }).first().click();
     await expect(page.getByText("Walmart Inc. Spread", { exact: true })).toBeVisible();
-    await expect(page.getByTestId("intake-doc-count-header")).toHaveText("04/04 Documents Uploaded");
+    await expect(page.getByTestId("intake-doc-count-header")).toHaveText("09/09 Documents Uploaded");
     await expect(page.getByText("Next Best Action")).toBeVisible();
   });
 
