@@ -298,4 +298,34 @@ test.describe("Financial analyst user journeys", () => {
     await expect(page.getByText("Annual Review")).toBeVisible();
     await expect(page.getByTestId("integrity-banner")).toContainText("Integrity checks pass");
   });
+
+  test("Journey 22 — Trust Inspector opens as a full overlay from the Exceptions tab", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Review mapping" }).click();
+    await page.getByRole("button", { name: /Exceptions \(1\)/ }).click();
+    // Scroll down first — this is exactly the state that used to make the inspector look broken.
+    await page.mouse.wheel(0, 1200);
+    await page.getByTestId("inspect-exception-total-assets").click();
+    const overlay = page.getByTestId("trust-inspector-overlay");
+    await expect(overlay).toBeVisible();
+    const box = await overlay.boundingBox();
+    expect(box?.y).toBeLessThanOrEqual(1);
+    // SOP link inside the inspector must cite the field it's actually attached to.
+    await page.getByTestId("trust-inspector-sop-link").click();
+    await expect(page.getByTestId("sop-viewer-panel")).toContainText("§7.7");
+    await expect(page.getByTestId("sop-viewer-panel")).toContainText("Total Assets");
+  });
+
+  test("Journey 23 — Confidence filter narrows the Extracted table", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Review mapping" }).click();
+    await page.getByRole("button", { name: /Extracted \(140\)/ }).click();
+    await expect(page.getByText(/Showing 1.*of 140 fields/)).toBeVisible();
+    await page.getByTestId("confidence-filter-review").click();
+    // Filtered to the 1 review-confidence row — under one page, so no pagination text.
+    await expect(page.getByText(/Showing/)).toHaveCount(0);
+    await expect(page.getByRole("row", { name: /Total Assets \$100K/ })).toBeVisible();
+    await page.getByTestId("confidence-filter-review").click();
+    await expect(page.getByText(/Showing 1.*of 140 fields/)).toBeVisible();
+  });
 });

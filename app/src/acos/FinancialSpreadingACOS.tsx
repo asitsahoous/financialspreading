@@ -504,10 +504,17 @@ function FigmaConfidenceBadge({
   level,
   label,
   theme,
+  onClick,
+  active,
+  testId,
 }: {
   level: "high" | "review" | "missing";
   label: string;
   theme: FigmaTheme;
+  /** When provided, the badge becomes a clickable filter toggle instead of a static status pill. */
+  onClick?: () => void;
+  active?: boolean;
+  testId?: string;
 }) {
   const styles: Record<typeof level, { bg: string; fg: string }> = {
     high: { bg: theme.fill.tertiary, fg: theme.category.green },
@@ -517,6 +524,9 @@ function FigmaConfidenceBadge({
   const s = styles[level];
   return (
     <span
+      role={onClick ? "button" : undefined}
+      data-testid={testId}
+      onClick={onClick}
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -526,9 +536,10 @@ function FigmaConfidenceBadge({
         fontSize: 12,
         fontWeight: 500,
         lineHeight: "16px",
-        background: s.bg,
-        color: s.fg,
-        border: `1px solid ${theme.stroke.tertiary}`,
+        background: active ? s.fg : s.bg,
+        color: active ? "#fff" : s.fg,
+        border: `1px solid ${active ? s.fg : theme.stroke.tertiary}`,
+        cursor: onClick ? "pointer" : undefined,
       }}
     >
       {label}
@@ -945,7 +956,7 @@ const TRUST_GATES = [
     label: "Gate 2",
     title: "Sign off spread",
     agent: "Mapping + Review QA",
-    sop: "§7.4",
+    sop: "§7.7",
     why: "Exceptions surface with page-level lineage — Risk Agent cannot run until analysts approve the spread.",
   },
   {
@@ -1534,7 +1545,7 @@ const MAPPING_CORE_ROWS: MappingRow[] = [
     value: "$100K",
     confidence: "review",
     agentId: "review",
-    sop: "§7.4",
+    sop: "§7.7",
     source: "10-K p.43",
     reasoning:
       "FY2024 Total Assets was $98.1B. Industry median $120B. OCR may have misread scale (K vs B). Pattern match confidence 41%.",
@@ -1545,7 +1556,7 @@ const MAPPING_CORE_ROWS: MappingRow[] = [
     value: "$35,420M",
     confidence: "high",
     agentId: "mapping",
-    sop: "§8.1",
+    sop: "§8.2",
     source: "10-K p.44",
     reasoning: "Debt schedule footnote cross-validated; covenant schedule §3.1 consistent.",
     auditId: "trace-8843-wmt-debt",
@@ -1555,7 +1566,7 @@ const MAPPING_CORE_ROWS: MappingRow[] = [
     value: "$14,850M",
     confidence: "high",
     agentId: "mapping",
-    sop: "§8.3",
+    sop: "§8.7",
     source: "10-K p.44",
     reasoning: "Equity roll matches prior spread; no review threshold triggered.",
     auditId: "trace-8844-wmt-equity",
@@ -5509,7 +5520,23 @@ function TrustInspector({
   };
 
   return (
-    <Card>
+    <div
+      data-testid="trust-inspector-overlay"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.35)",
+        zIndex: 245,
+        display: "flex",
+        justifyContent: "flex-end",
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{ width: 480, maxWidth: "100%", height: "100%", overflow: "auto", boxShadow: "-4px 0 24px rgba(0,0,0,0.12)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Card style={{ borderRadius: 0, border: "none", height: "100%" }}>
       <CardHeader
         trailing={
           <Button variant="ghost" onClick={onClose}>
@@ -5695,7 +5722,9 @@ function TrustInspector({
           </Text>
         </Stack>
       </CardBody>
-    </Card>
+        </Card>
+      </div>
+    </div>
   );
 }
 
@@ -6029,6 +6058,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
   const [savedAt, setSavedAt] = useCanvasState<string>("caseSavedAt", "");
   const [mappingSearch, setMappingSearch] = useCanvasState<string>("mappingFieldSearch", "");
   const [mappingPage, setMappingPage] = useCanvasState<number>("mappingPage", 0);
+  const [confidenceFilter, setConfidenceFilter] = useCanvasState<"high" | "review" | "missing" | null>("mappingConfidenceFilter", null);
   const [intakeDocOverrides, setIntakeDocOverrides] = useCanvasState<IntakeDocOverridesByCase>("intakeDocOverrides", {});
   const [demoPortfolioContext] = useCanvasState<DemoPortfolioContext>("demoPortfolioContext", null);
   const [portfolioBannerDismissed, setPortfolioBannerDismissed] = useCanvasState<boolean>("portfolioBannerDismissed", false);
@@ -6211,7 +6241,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
 
   useEffect(() => {
     setMappingPage(0);
-  }, [mappingSearch, detailTab, setMappingPage]);
+  }, [mappingSearch, detailTab, confidenceFilter, setMappingPage]);
 
   const mergedLog: RuntimeLogEntry[] = [...caseDef.runtimeLog, ...caseAudit];
   const newEntryIds = new Set(caseAudit.map((e) => e.id));
@@ -6220,9 +6250,10 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
   const mappingQuery = mappingSearch.trim().toLowerCase();
   const filteredMapping = spreadMappingData.filter(
     (r) =>
-      mappingQuery === "" ||
-      r.field.toLowerCase().includes(mappingQuery) ||
-      r.value.toLowerCase().includes(mappingQuery),
+      (mappingQuery === "" ||
+        r.field.toLowerCase().includes(mappingQuery) ||
+        r.value.toLowerCase().includes(mappingQuery)) &&
+      (confidenceFilter === null || r.confidence === confidenceFilter),
   );
   const mappingPageCount = Math.max(1, Math.ceil(filteredMapping.length / MAPPING_PAGE_SIZE));
   const safeMappingPage = Math.min(mappingPage, mappingPageCount - 1);
@@ -6795,9 +6826,35 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                     <Text size="small" tone="tertiary">
                       Extraction Confidence
                     </Text>
-                    <FigmaConfidenceBadge level="high" label="High" theme={theme} />
-                    <FigmaConfidenceBadge level="review" label="Review" theme={theme} />
-                    <FigmaConfidenceBadge level="missing" label="Low" theme={theme} />
+                    <FigmaConfidenceBadge
+                      level="high"
+                      label="High"
+                      theme={theme}
+                      active={confidenceFilter === "high"}
+                      testId="confidence-filter-high"
+                      onClick={() => setConfidenceFilter(confidenceFilter === "high" ? null : "high")}
+                    />
+                    <FigmaConfidenceBadge
+                      level="review"
+                      label="Review"
+                      theme={theme}
+                      active={confidenceFilter === "review"}
+                      testId="confidence-filter-review"
+                      onClick={() => setConfidenceFilter(confidenceFilter === "review" ? null : "review")}
+                    />
+                    <FigmaConfidenceBadge
+                      level="missing"
+                      label="Low"
+                      theme={theme}
+                      active={confidenceFilter === "missing"}
+                      testId="confidence-filter-missing"
+                      onClick={() => setConfidenceFilter(confidenceFilter === "missing" ? null : "missing")}
+                    />
+                    {confidenceFilter && (
+                      <Button variant="ghost" style={{ height: 24, fontSize: 11 }} onClick={() => setConfidenceFilter(null)}>
+                        Clear filter
+                      </Button>
+                    )}
                   </Row>
                 </Row>
                 <Row gap={0} align="stretch" style={{ minHeight: 400 }}>
@@ -6861,14 +6918,23 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                             Mapping exceptions cleared. Sign Gate 2 below to release Risk Agent.
                           </Callout>
                         ) : (
-                          <>
-                            <Callout tone="warning" title="Review Agent exception">
-                              Total Assets $100K — FY2024 was $98M; industry median $120M. Likely decimal error on p.43.
-                            </Callout>
-                            <Button variant="primary" onClick={() => setSelectedField("Total Assets")}>
-                              Open Trust Inspector
-                            </Button>
-                          </>
+                          spreadMappingData
+                            .filter((r) => r.confidence === "review" && !acceptedFields.has(r.field))
+                            .map((r) => (
+                              <div key={r.field}>
+                                <Callout tone="warning" title={`Review Agent exception — ${r.field}`}>
+                                  {r.value} — {r.reasoning ?? "Flagged for analyst verification."}
+                                </Callout>
+                                <Button
+                                  variant="primary"
+                                  style={{ marginTop: 8 }}
+                                  data-testid={`inspect-exception-${r.field.replace(/\s+/g, "-").toLowerCase()}`}
+                                  onClick={() => setSelectedField(r.field)}
+                                >
+                                  Open Trust Inspector — {r.field}
+                                </Button>
+                              </div>
+                            ))
                         )}
                       </Stack>
                     )}
