@@ -140,9 +140,32 @@ def build_graph(checkpointer=None):
     builder.add_conditional_edges("gate5", _route_after_gate5, {END: END})
 
     # ── Checkpointer ──────────────────────────────────────────────────────────
+    # NOTE: SqliteSaver/PostgresSaver.from_conn_string() are @contextmanager
+    # generators — they must not be assigned directly (that yields the
+    # _GeneratorContextManager wrapper, not a usable saver). Construct the
+    # saver directly from an open connection instead, since this checkpointer
+    # is meant to live for the whole process (FastAPI's lifespan), not a
+    # single `with` block.
     if checkpointer is None:
-        db_path = os.getenv("SQLITE_PATH", "acos.db")
-        checkpointer = SqliteSaver.from_conn_string(db_path)
+        database_url = os.getenv("DATABASE_URL")
+        if database_url:
+            # Production: Postgres (e.g. Supabase). Imported lazily so local dev
+            # without psycopg installed still works via the SQLite fallback below.
+            from psycopg import Connection
+            from psycopg.rows import dict_row
+            from langgraph.checkpoint.postgres import PostgresSaver
+
+            conn = Connection.connect(
+                database_url, autocommit=True, prepare_threshold=0, row_factory=dict_row
+            )
+            checkpointer = PostgresSaver(conn)
+            checkpointer.setup()
+        else:
+            import sqlite3
+
+            db_path = os.getenv("SQLITE_PATH", "acos.db")
+            conn = sqlite3.connect(db_path, check_same_thread=False)
+            checkpointer = SqliteSaver(conn)
 
     return builder.compile(checkpointer=checkpointer, interrupt_before=[
         "gate1", "gate2", "gate3", "gate4", "gate5",

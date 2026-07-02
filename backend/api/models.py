@@ -28,6 +28,13 @@ class FieldOverrideRequest(BaseModel):
     actor: str
 
 
+class ReceiveDocumentRequest(BaseModel):
+    actor: str
+    size_kb: int | None = None
+    classification: str | None = None
+    uploaded_file_name: str | None = None
+
+
 class CaseResponse(BaseModel):
     case_id: str
     case_ref: str

@@ -18,11 +18,21 @@ import {
   useCanvasState,
   useHostTheme,
 } from "./ui";
-import { useCallback, useEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { resetDemoSession, showActionToast } from "./state";
 import { renderTextWithSopLinks, SopLink, SopViewerPanel } from "./sopPolicy";
 import { CompanySpreadView } from "./financials/CompanySpreadView";
 import type { CompanyId } from "./financials/dataset";
+import {
+  BACKEND_WIRED_MAPPING_FIELDS,
+  backendGatesToSignedKinds,
+  ensureBackendCase,
+  fetchBackendCase,
+  overrideBackendField,
+  signBackendGate,
+  type BackendCaseRole,
+  type BackendGateId,
+} from "./backendCase";
 
 /** Minimal shape used for click-outside checks — avoids importing React.MouseEvent, which
  *  is not exported the same way across the app's Vite/@types-react setup and the Canvas
@@ -6128,15 +6138,52 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
     setSopViewer({ section, appliedTo });
   }, [setSopViewer]);
 
+  // ── Real backend sync (Gate 1–5 sign-off only — see backendCase.ts) ────────
+  const [backendCaseId, setBackendCaseId] = useState<string | null>(null);
+  const [backendSignedGates, setBackendSignedGates] = useState<Set<string>>(new Set());
+  const [backendSyncError, setBackendSyncError] = useState<string | null>(null);
+
+  const refreshBackendGates = useCallback(async (id: string) => {
+    const res = await fetchBackendCase(id);
+    if (res) {
+      setBackendSignedGates(backendGatesToSignedKinds(res.gates));
+      setBackendSyncError(null);
+    } else {
+      setBackendSyncError("Could not reach the ACOS backend — gate signatures won't be saved this session.");
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setBackendCaseId(null);
+    ensureBackendCase(caseId as BackendCaseRole)
+      .then((id) => {
+        if (cancelled) return;
+        setBackendCaseId(id);
+        return refreshBackendGates(id);
+      })
+      .catch(() => {
+        if (!cancelled) setBackendSyncError("Could not reach the ACOS backend — gate signatures won't be saved this session.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [caseId, refreshBackendGates]);
+
+  useEffect(() => {
+    if (backendSyncError) showActionToast(backendSyncError);
+  }, [backendSyncError]);
+
   const caseDef = CASES[caseId];
   const mergedIntakeDocs = mergeIntakeDocs(caseDef.intakeDocs, intakeDocOverrides[caseId]);
   const receivedCount = mergedIntakeDocs.filter((d) => d.received).length;
   const totalIntakeDocs = mergedIntakeDocs.length;
 
   const caseAudit = auditAppend.filter((e) => e.caseId === caseId);
-  const signedGateActions = new Set(
-    caseAudit.map((e) => e.gateAction).filter((g): g is GateSignKind => g != null),
-  );
+  const signedGateActions = new Set([
+    ...caseAudit.map((e) => e.gateAction).filter((g): g is GateSignKind => g != null),
+    ...backendSignedGates,
+  ] as GateSignKind[]);
   const gate1Signed = signedGateActions.has("gate1-sign");
   const isNorthern = caseId === "northern-retail";
   const missingNow = totalIntakeDocs - receivedCount;
@@ -6329,6 +6376,40 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
     safeMappingPage * MAPPING_PAGE_SIZE,
     safeMappingPage * MAPPING_PAGE_SIZE + MAPPING_PAGE_SIZE,
   );
+  // Fire-and-forget: persists the signature to the real backend (see
+  // backendCase.ts) and reconciles `backendSignedGates` from the server
+  // response so a reload reflects the real, durable gate status. Local UX
+  // (toasts, stage transitions) proceeds immediately without waiting on this.
+  const persistGateToBackend = useCallback(
+    (kind: GateSignKind) => {
+      if (!backendCaseId) return;
+      const gateId = kind.replace("-sign", "") as BackendGateId;
+      signBackendGate(backendCaseId, gateId, "Sarah W. (Credit Analyst)")
+        .then((res) => setBackendSignedGates(backendGatesToSignedKinds(res.gates)))
+        .catch(() => setBackendSyncError(`Gate ${gateId} sign didn't reach the backend — it will not survive a reload.`));
+    },
+    [backendCaseId],
+  );
+
+  // Same fire-and-forget pattern as persistGateToBackend, but only for
+  // fields known to exist on both the frontend fixture and the backend's
+  // seeded exception data (see BACKEND_WIRED_MAPPING_FIELDS in backendCase.ts).
+  const persistMappingActionToBackend = useCallback(
+    (action: Extract<GateAction, { kind: "mapping-accept" | "mapping-override" }>) => {
+      if (!backendCaseId || !BACKEND_WIRED_MAPPING_FIELDS.has(action.field)) return;
+      const isAccept = action.kind === "mapping-accept";
+      const currentValue = spreadMappingData.find((r) => r.field === action.field)?.value ?? "";
+      const correctedValue = isAccept ? currentValue : action.correctedValue || currentValue;
+      const reason = isAccept
+        ? "Analyst accepted the agent-mapped value as correct."
+        : action.note || "Analyst-corrected value via Trust Inspector.";
+      overrideBackendField(backendCaseId, action.field, correctedValue, reason, "Sarah W. (Credit Analyst)").catch(() =>
+        setBackendSyncError(`Correction for ${action.field} didn't reach the backend — it will not survive a reload.`),
+      );
+    },
+    [backendCaseId, spreadMappingData],
+  );
+
   const appendAudit = (action: GateAction) => {
     if (isGateSignKind(action.kind)) {
       const alreadySigned = signedGateActions.has(action.kind);
@@ -6343,6 +6424,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
         }
         const event = makeAuditEvent(caseId, action);
         setAuditAppend((prev) => [...prev, event]);
+        persistGateToBackend(action.kind);
         showActionToast("Gate 1 signed — pipeline unlocked for extraction");
         setStageId("extraction");
         return;
@@ -6359,6 +6441,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
       }
       const event = makeAuditEvent(caseId, action);
       setAuditAppend((prev) => [...prev, event]);
+      persistGateToBackend(action.kind);
       if (action.kind === "gate2-sign") {
         showActionToast("Gate 2 signed — Risk Agent released for assessment");
         setStageId("assessment");
@@ -6385,8 +6468,13 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
     setAuditAppend((prev) => [...prev, event]);
     if (action.kind === "intake-override") showActionToast("Intake override logged to audit trail");
     else if (action.kind === "intake-doc-request") showActionToast("Doc request reminder sent — pipeline remains blocked");
-    else if (action.kind === "mapping-accept") showActionToast(`Accepted mapping for ${action.field}`);
-    else if (action.kind === "mapping-override") showActionToast("Override logged with reason and timestamp");
+    else if (action.kind === "mapping-accept") {
+      showActionToast(`Accepted mapping for ${action.field}`);
+      persistMappingActionToBackend(action);
+    } else if (action.kind === "mapping-override") {
+      showActionToast("Override logged with reason and timestamp");
+      persistMappingActionToBackend(action);
+    }
     else if (action.kind === "gate5-decline") showActionToast("Gate 5 declined — committee vote recorded, case closed per SOP §14");
     else if (action.kind === "gate5-table") showActionToast("Gate 5 tabled — additional information requested, case remains open");
   };

@@ -28,6 +28,10 @@ class Document(TypedDict):
     sop_ref: str
     received: bool
     size_kb: int | None
+    classification: str | None
+    uploaded_by: str | None
+    uploaded_on: str | None
+    uploaded_file_name: str | None
 
 
 class ExtractedField(TypedDict):

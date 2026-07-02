@@ -9,10 +9,11 @@ from fastapi import APIRouter, HTTPException, Depends
 from langgraph.types import Command
 
 from api.models import (
-    CreateCaseRequest, GateDecisionRequest, FieldOverrideRequest,
+    CreateCaseRequest, GateDecisionRequest, FieldOverrideRequest, ReceiveDocumentRequest,
     CaseResponse, AuditEventResponse, PortfolioResponse,
 )
 from graph.nodes.sentinel import sentinel_scan
+from graph.nodes.intake import compute_intake_completeness
 from graph.nodes.utils import now_iso, build_audit_event
 
 router = APIRouter()
@@ -114,12 +115,10 @@ async def create_case(body: CreateCaseRequest, graph=Depends(get_graph)):
 
     config = {"configurable": {"thread_id": case_id}}
 
-    # Run graph until first interrupt (Gate 1)
-    try:
-        await graph.ainvoke(initial_state, config=config)
-    except Exception:
-        # Graph interrupted at gate — expected behaviour
-        pass
+    # Run graph until first interrupt (Gate 1).
+    # Sync invoke() — matches the sync SqliteSaver/PostgresSaver checkpointer
+    # (see graph/graph.py); ainvoke() requires an async checkpointer variant.
+    graph.invoke(initial_state, config=config)
 
     state = graph.get_state(config)
     return _state_to_response(state.values)
@@ -178,17 +177,73 @@ async def sign_gate(case_id: str, gate_id: str, body: GateDecisionRequest, graph
         "reason": body.reason,
     }
 
-    try:
-        await graph.ainvoke(
-            Command(resume=decision_payload),
-            config=config,
-        )
-    except Exception:
-        # May interrupt at next gate — expected
-        pass
+    # Sync invoke() — see note in create_case() above.
+    graph.invoke(Command(resume=decision_payload), config=config)
 
     updated_state = graph.get_state(config)
     return _state_to_response(updated_state.values)
+
+
+# ─── Documents ────────────────────────────────────────────────────────────────
+
+@router.post("/cases/{case_id}/documents/{doc_name}/receive", response_model=CaseResponse)
+async def receive_document(case_id: str, doc_name: str, body: ReceiveDocumentRequest, graph=Depends(get_graph)):
+    """
+    Mark a document as received during Intake (upload or quick-fill).
+    Recomputes completeness the same way `intake_agent` does at case creation,
+    since that node only runs once, before Gate 1 — see intake.py.
+    """
+    config = {"configurable": {"thread_id": case_id}}
+    state = graph.get_state(config)
+    if not state or not state.values:
+        raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
+
+    current_state = dict(state.values)
+    documents = list(current_state.get("documents", []))
+
+    found = False
+    for doc in documents:
+        if doc["name"] == doc_name:
+            doc["received"] = True
+            doc["size_kb"] = body.size_kb
+            doc["classification"] = body.classification
+            doc["uploaded_by"] = body.actor
+            doc["uploaded_on"] = now_iso()
+            doc["uploaded_file_name"] = body.uploaded_file_name
+            found = True
+            break
+    if not found:
+        raise HTTPException(status_code=404, detail=f"Document '{doc_name}' not on the SOP manifest for this case")
+
+    result = compute_intake_completeness(current_state["case_type"], documents)
+    missing_count = len(result["missing_docs"])
+
+    audit_event = build_audit_event(
+        stage="Intake",
+        actor_kind="human",
+        actor=body.actor,
+        agent_id=None,
+        input_summary=f"Document received: {doc_name}",
+        reasoning=f"{body.actor} marked '{doc_name}' as received.",
+        output_summary=result["output_summary"],
+    )
+
+    existing_trail = current_state.get("audit_trail", [])
+    graph.update_state(
+        config,
+        {
+            "documents": result["documents"],
+            "intake_complete": result["intake_complete"],
+            "missing_docs": result["missing_docs"],
+            "intake_summary": result["intake_summary"],
+            "pipeline_blocked": not result["intake_complete"] and current_state.get("current_stage") == "intake",
+            "updated_at": now_iso(),
+            "audit_trail": existing_trail + [audit_event],
+        },
+    )
+
+    updated = graph.get_state(config)
+    return _state_to_response(updated.values)
 
 
 # ─── Field overrides ──────────────────────────────────────────────────────────

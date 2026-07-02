@@ -57,7 +57,7 @@ def gate1_node(state: CreditCaseState) -> dict:
         actor=decision.get("actor", "Credit Analyst"),
         agent_id=None,
         input_summary="Intake Agent completeness checklist",
-        reasoning=decision.get("reason", "Visual confirm — correct entity, correct fiscal year"),
+        reasoning=decision.get("reason") or "Visual confirm — correct entity, correct fiscal year",
         output_summary=f"Gate 1 {decision.get('status', 'pending')} by {decision.get('actor', 'analyst')}",
         gate_id="gate1",
     )
@@ -101,7 +101,7 @@ def gate2_node(state: CreditCaseState) -> dict:
         actor=decision.get("actor", "Credit Analyst"),
         agent_id=None,
         input_summary=f"Spread draft v1 — {state.get('mapping_complete_count', 0)} cells; exception(s) reviewed",
-        reasoning=decision.get("reason", "Analyst signed Gate 2 after reviewing mapping exceptions and SOP compliance"),
+        reasoning=decision.get("reason") or "Analyst signed Gate 2 after reviewing mapping exceptions and SOP compliance",
         output_summary=f"Gate 2 {decision.get('status')} — Risk Agent {'released' if decision.get('status') == 'approved' else 'held'}",
         gate_id="gate2",
     )
@@ -144,7 +144,7 @@ def gate3_node(state: CreditCaseState) -> dict:
         actor=decision.get("actor", "Risk Officer"),
         agent_id=None,
         input_summary=f"Ratio analysis — {len(state.get('ratios', []))} ratios; {len(state.get('covenant_breaches', []))} breach(es)",
-        reasoning=decision.get("reason", "Risk officer reviewed flagged ratios against covenant schedule §3.1"),
+        reasoning=decision.get("reason") or "Risk officer reviewed flagged ratios against covenant schedule §3.1",
         output_summary=f"Gate 3 {decision.get('status')} — Memo Composer {'released' if decision.get('status') == 'approved' else 'held'}",
         gate_id="gate3",
     )
@@ -185,7 +185,7 @@ def gate4_node(state: CreditCaseState) -> dict:
         actor=decision.get("actor", "Credit Analyst"),
         agent_id=None,
         input_summary=f"Memo draft — {len(state.get('memo_sections', []))} sections; connector citations verified",
-        reasoning=decision.get("reason", "Memo coherence reviewed — bureau citations verified, AML/KYC attestation confirmed"),
+        reasoning=decision.get("reason") or "Memo coherence reviewed — bureau citations verified, AML/KYC attestation confirmed",
         output_summary=f"Gate 4 {decision.get('status')} — Decision Synthesis {'released' if decision.get('status') == 'approved' else 'held'}",
         gate_id="gate4",
     )
@@ -229,7 +229,7 @@ def gate5_node(state: CreditCaseState) -> dict:
         actor=decision.get("actor", "Credit Committee"),
         agent_id=None,
         input_summary="Decision Synthesis rationale tree + connector evidence bundle",
-        reasoning=decision.get("reason", "Credit committee reviewed weighted rationale and evidence bundle"),
+        reasoning=decision.get("reason") or "Credit committee reviewed weighted rationale and evidence bundle",
         output_summary=f"Gate 5 {decision.get('status')} — case {'complete' if decision.get('status') == 'approved' else 'pending'}",
         gate_id="gate5",
     )

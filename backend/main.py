@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
     # Build and inject graph on startup
     graph = build_graph()
     set_graph(graph)
-    print("✓ ACOS LangGraph compiled — 10 agent nodes, 5 human gates")
+    print("ACOS LangGraph compiled - 10 agent nodes, 5 human gates")
     yield
     print("ACOS shutting down")
 

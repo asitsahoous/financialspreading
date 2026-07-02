@@ -33,3 +33,16 @@ _index/
 # Playwright
 app/test-results/
 
+# Python backend
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.db
+backend/*.db-shm
+backend/*.db-wal
+
+# Environment files (contain machine/deploy-specific config, e.g. DB credentials)
+.env
+app/.env
+backend/.env
+

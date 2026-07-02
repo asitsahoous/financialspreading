@@ -99,6 +99,10 @@ export function resetDemoSession() {
     const keys: string[] = [];
     for (let i = 0; i < sessionStorage.length; i++) {
       const key = sessionStorage.key(i);
+      // "acos:" keys are the local sessionStorage-backed UI state; the
+      // separate "acos:backendCaseId:" pointers (see backendCase.ts) are
+      // included by this same prefix, so clearing them here makes the next
+      // load create fresh backend cases instead of reusing the old ones.
       if (key?.startsWith("acos:")) keys.push(key);
     }
     for (const key of keys) sessionStorage.removeItem(key);

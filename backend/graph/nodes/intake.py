@@ -46,26 +46,35 @@ SOP_MANIFEST: dict[str, list[tuple[str, str]]] = {
 }
 
 
-def intake_agent(state: CreditCaseState) -> dict:
+def compute_intake_completeness(case_type: str, documents: list[Document]) -> dict:
     """
-    Checks received documents against SOP manifest.
-    Returns updated state with intake result.
-    Gate 1 interrupt is handled in the graph router.
+    Diffs the given documents against the SOP §4.2 manifest for this case type.
+    Shared by `intake_agent` (first run, before Gate 1) and the
+    `/documents/{doc_name}/receive` endpoint (subsequent updates after Gate 1
+    has already been reached) so completeness is always computed the same way.
+    Preserves any extra per-document fields (classification, uploaded_by, etc.)
+    already present on `documents` — it only fills in manifest defaults for
+    documents not yet present in the list.
     """
-    manifest = SOP_MANIFEST.get(state["case_type"], SOP_MANIFEST["term_loan_b"])
-    received_names = {doc["name"] for doc in state.get("documents", []) if doc["received"]}
+    manifest = SOP_MANIFEST.get(case_type, SOP_MANIFEST["term_loan_b"])
+    by_name: dict[str, Document] = {doc["name"]: doc for doc in documents}
 
     missing: list[str] = []
     all_docs: list[Document] = []
     for doc_name, sop_ref in manifest:
-        received = doc_name in received_names
+        existing = by_name.get(doc_name)
+        received = bool(existing["received"]) if existing else False
         if not received:
             missing.append(f"{doc_name} ({sop_ref})")
-        all_docs.append({
+        all_docs.append(existing or {
             "name": doc_name,
             "sop_ref": sop_ref,
-            "received": received,
+            "received": False,
             "size_kb": None,
+            "classification": None,
+            "uploaded_by": None,
+            "uploaded_on": None,
+            "uploaded_file_name": None,
         })
 
     intake_complete = len(missing) == 0
@@ -78,11 +87,11 @@ def intake_agent(state: CreditCaseState) -> dict:
         )
         input_summary = f"Uploaded package: {len(all_docs)} documents + SOP §4.2 manifest"
         reasoning = (
-            f"Orchestrator matched case type {state['case_type']} → commercial credit intake workflow. "
+            f"Orchestrator matched case type {case_type} → commercial credit intake workflow. "
             f"Intake Agent compared received files to manifest: {len(all_docs)}/{len(all_docs)} present; "
             f"no duplicate or wrong-entity filings detected."
         )
-        output_summary = f"Completeness 9/9 ✓ — Gate 1 eligible. Entity IDs captured → connectors queued."
+        output_summary = f"Completeness {len(all_docs)}/{len(all_docs)} ✓ — Gate 1 eligible. Entity IDs captured → connectors queued."
     else:
         summary = (
             f"{len(all_docs) - missing_count}/{len(all_docs)} documents received — "
@@ -99,26 +108,46 @@ def intake_agent(state: CreditCaseState) -> dict:
             f"Gate 1 BLOCKED. {missing_count} missing: {', '.join(missing[:3])}{'…' if missing_count > 3 else ''}."
         )
 
-    audit_event = build_audit_event(
-        stage="Intake",
-        actor_kind="agent",
-        actor="Intake & Completeness Agent",
-        agent_id="intake",
-        input_summary=input_summary,
-        reasoning=reasoning,
-        output_summary=output_summary,
-    )
-
-    existing_trail = state.get("audit_trail", [])
     return {
         "documents": all_docs,
         "intake_complete": intake_complete,
         "missing_docs": missing,
         "intake_summary": summary,
+        "input_summary": input_summary,
+        "reasoning": reasoning,
+        "output_summary": output_summary,
+    }
+
+
+def intake_agent(state: CreditCaseState) -> dict:
+    """
+    Checks received documents against SOP manifest.
+    Returns updated state with intake result.
+    Gate 1 interrupt is handled in the graph router.
+    """
+    result = compute_intake_completeness(state["case_type"], state.get("documents", []))
+
+    audit_event = build_audit_event(
+        stage="Intake",
+        actor_kind="agent",
+        actor="Intake & Completeness Agent",
+        agent_id="intake",
+        input_summary=result["input_summary"],
+        reasoning=result["reasoning"],
+        output_summary=result["output_summary"],
+    )
+
+    existing_trail = state.get("audit_trail", [])
+    missing_count = len(result["missing_docs"])
+    return {
+        "documents": result["documents"],
+        "intake_complete": result["intake_complete"],
+        "missing_docs": result["missing_docs"],
+        "intake_summary": result["intake_summary"],
         "current_stage": "intake",
-        "pipeline_blocked": not intake_complete,
+        "pipeline_blocked": not result["intake_complete"],
         "block_reason": (
-            f"Gate 1 blocked — {missing_count} documents missing per SOP §4.2" if not intake_complete else None
+            f"Gate 1 blocked — {missing_count} documents missing per SOP §4.2" if not result["intake_complete"] else None
         ),
         "updated_at": now_iso(),
         "audit_trail": existing_trail + [audit_event],
