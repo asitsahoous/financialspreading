@@ -3,7 +3,9 @@ ACOS REST API Router
 Endpoints for case management, gate sign-off, field overrides, and portfolio.
 """
 from __future__ import annotations
+import asyncio
 import uuid
+from collections import defaultdict
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends
 from langgraph.types import Command
@@ -29,6 +31,20 @@ def get_graph():
 def set_graph(graph):
     global _graph
     _graph = graph
+
+
+# Per-case_id lock. The checkpointer's read-modify-write sequence in each
+# mutating endpoint below (get_state -> mutate -> invoke/update_state) is not
+# safe against two overlapping requests for the *same* case_id — a second
+# request could read stale state before the first has committed its write,
+# corrupting the LangGraph interrupt cursor (this is exactly the class of bug
+# that caused gate signatures to be recorded one gate behind — see
+# docs/KNOWN_ISSUES.md). Requests for *different* case_ids are unaffected.
+_case_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+
+def _lock_for(case_id: str) -> asyncio.Lock:
+    return _case_locks[case_id]
 
 
 def _case_ref(case_type: str, borrower_name: str) -> str:
@@ -162,26 +178,27 @@ async def sign_gate(case_id: str, gate_id: str, body: GateDecisionRequest, graph
     Human sign-off or override for a gate.
     Resumes the LangGraph thread with the human decision.
     """
-    config = {"configurable": {"thread_id": case_id}}
-    state = graph.get_state(config)
-    if not state or not state.values:
-        raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
+    async with _lock_for(case_id):
+        config = {"configurable": {"thread_id": case_id}}
+        state = graph.get_state(config)
+        if not state or not state.values:
+            raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
 
-    if body.gate_id != gate_id:
-        raise HTTPException(status_code=400, detail="gate_id in path and body must match")
+        if body.gate_id != gate_id:
+            raise HTTPException(status_code=400, detail="gate_id in path and body must match")
 
-    # Resume graph with human decision via LangGraph Command
-    decision_payload = {
-        "status": body.status,
-        "actor": body.actor,
-        "reason": body.reason,
-    }
+        # Resume graph with human decision via LangGraph Command
+        decision_payload = {
+            "status": body.status,
+            "actor": body.actor,
+            "reason": body.reason,
+        }
 
-    # Sync invoke() — see note in create_case() above.
-    graph.invoke(Command(resume=decision_payload), config=config)
+        # Sync invoke() — see note in create_case() above.
+        graph.invoke(Command(resume=decision_payload), config=config)
 
-    updated_state = graph.get_state(config)
-    return _state_to_response(updated_state.values)
+        updated_state = graph.get_state(config)
+        return _state_to_response(updated_state.values)
 
 
 # ─── Documents ────────────────────────────────────────────────────────────────
@@ -193,57 +210,57 @@ async def receive_document(case_id: str, doc_name: str, body: ReceiveDocumentReq
     Recomputes completeness the same way `intake_agent` does at case creation,
     since that node only runs once, before Gate 1 — see intake.py.
     """
-    config = {"configurable": {"thread_id": case_id}}
-    state = graph.get_state(config)
-    if not state or not state.values:
-        raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
+    async with _lock_for(case_id):
+        config = {"configurable": {"thread_id": case_id}}
+        state = graph.get_state(config)
+        if not state or not state.values:
+            raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
 
-    current_state = dict(state.values)
-    documents = list(current_state.get("documents", []))
+        current_state = dict(state.values)
+        documents = list(current_state.get("documents", []))
 
-    found = False
-    for doc in documents:
-        if doc["name"] == doc_name:
-            doc["received"] = True
-            doc["size_kb"] = body.size_kb
-            doc["classification"] = body.classification
-            doc["uploaded_by"] = body.actor
-            doc["uploaded_on"] = now_iso()
-            doc["uploaded_file_name"] = body.uploaded_file_name
-            found = True
-            break
-    if not found:
-        raise HTTPException(status_code=404, detail=f"Document '{doc_name}' not on the SOP manifest for this case")
+        found = False
+        for doc in documents:
+            if doc["name"] == doc_name:
+                doc["received"] = True
+                doc["size_kb"] = body.size_kb
+                doc["classification"] = body.classification
+                doc["uploaded_by"] = body.actor
+                doc["uploaded_on"] = now_iso()
+                doc["uploaded_file_name"] = body.uploaded_file_name
+                found = True
+                break
+        if not found:
+            raise HTTPException(status_code=404, detail=f"Document '{doc_name}' not on the SOP manifest for this case")
 
-    result = compute_intake_completeness(current_state["case_type"], documents)
-    missing_count = len(result["missing_docs"])
+        result = compute_intake_completeness(current_state["case_type"], documents)
 
-    audit_event = build_audit_event(
-        stage="Intake",
-        actor_kind="human",
-        actor=body.actor,
-        agent_id=None,
-        input_summary=f"Document received: {doc_name}",
-        reasoning=f"{body.actor} marked '{doc_name}' as received.",
-        output_summary=result["output_summary"],
-    )
+        audit_event = build_audit_event(
+            stage="Intake",
+            actor_kind="human",
+            actor=body.actor,
+            agent_id=None,
+            input_summary=f"Document received: {doc_name}",
+            reasoning=f"{body.actor} marked '{doc_name}' as received.",
+            output_summary=result["output_summary"],
+        )
 
-    existing_trail = current_state.get("audit_trail", [])
-    graph.update_state(
-        config,
-        {
-            "documents": result["documents"],
-            "intake_complete": result["intake_complete"],
-            "missing_docs": result["missing_docs"],
-            "intake_summary": result["intake_summary"],
-            "pipeline_blocked": not result["intake_complete"] and current_state.get("current_stage") == "intake",
-            "updated_at": now_iso(),
-            "audit_trail": existing_trail + [audit_event],
-        },
-    )
+        existing_trail = current_state.get("audit_trail", [])
+        graph.update_state(
+            config,
+            {
+                "documents": result["documents"],
+                "intake_complete": result["intake_complete"],
+                "missing_docs": result["missing_docs"],
+                "intake_summary": result["intake_summary"],
+                "pipeline_blocked": not result["intake_complete"] and current_state.get("current_stage") == "intake",
+                "updated_at": now_iso(),
+                "audit_trail": existing_trail + [audit_event],
+            },
+        )
 
-    updated = graph.get_state(config)
-    return _state_to_response(updated.values)
+        updated = graph.get_state(config)
+        return _state_to_response(updated.values)
 
 
 # ─── Field overrides ──────────────────────────────────────────────────────────
@@ -251,42 +268,43 @@ async def receive_document(case_id: str, doc_name: str, body: ReceiveDocumentReq
 @router.post("/cases/{case_id}/overrides", response_model=CaseResponse)
 async def override_field(case_id: str, body: FieldOverrideRequest, graph=Depends(get_graph)):
     """Analyst overrides a mapped field value with a reason (Trust Inspector action)."""
-    config = {"configurable": {"thread_id": case_id}}
-    state = graph.get_state(config)
-    if not state or not state.values:
-        raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
+    async with _lock_for(case_id):
+        config = {"configurable": {"thread_id": case_id}}
+        state = graph.get_state(config)
+        if not state or not state.values:
+            raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
 
-    current_state = dict(state.values)
-    mapping_rows = current_state.get("mapping_rows", [])
+        current_state = dict(state.values)
+        mapping_rows = current_state.get("mapping_rows", [])
 
-    # Update the corrected field
-    for row in mapping_rows:
-        if row["field"] == body.field_name:
-            row["value"] = body.corrected_value
-            row["confidence"] = "high"
-            row["reasoning"] = f"Analyst override: {body.reason}"
-            break
+        # Update the corrected field
+        for row in mapping_rows:
+            if row["field"] == body.field_name:
+                row["value"] = body.corrected_value
+                row["confidence"] = "high"
+                row["reasoning"] = f"Analyst override: {body.reason}"
+                break
 
-    # Append audit event
-    audit_event = build_audit_event(
-        stage="Review",
-        actor_kind="human",
-        actor=body.actor,
-        agent_id=None,
-        input_summary=f"Field override request: {body.field_name}",
-        reasoning=f"Analyst override — reason: {body.reason}",
-        output_summary=f"Field '{body.field_name}' corrected to '{body.corrected_value}'. Override logged.",
-        gate_id=None,
-    )
+        # Append audit event
+        audit_event = build_audit_event(
+            stage="Review",
+            actor_kind="human",
+            actor=body.actor,
+            agent_id=None,
+            input_summary=f"Field override request: {body.field_name}",
+            reasoning=f"Analyst override — reason: {body.reason}",
+            output_summary=f"Field '{body.field_name}' corrected to '{body.corrected_value}'. Override logged.",
+            gate_id=None,
+        )
 
-    existing_trail = current_state.get("audit_trail", [])
-    graph.update_state(
-        config,
-        {"mapping_rows": mapping_rows, "audit_trail": existing_trail + [audit_event]},
-    )
+        existing_trail = current_state.get("audit_trail", [])
+        graph.update_state(
+            config,
+            {"mapping_rows": mapping_rows, "audit_trail": existing_trail + [audit_event]},
+        )
 
-    updated = graph.get_state(config)
-    return _state_to_response(updated.values)
+        updated = graph.get_state(config)
+        return _state_to_response(updated.values)
 
 
 # ─── Portfolio ────────────────────────────────────────────────────────────────
