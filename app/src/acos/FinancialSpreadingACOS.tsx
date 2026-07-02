@@ -2744,12 +2744,35 @@ function deriveCaseProgress(
   caseId: CaseId,
   signed: Set<GateSignKind>,
   remainingExceptions: number,
-  opts?: { receivedCount?: number; totalDocs?: number; northernUnlocked?: boolean; forceIntakeGate?: boolean },
+  opts?: { receivedCount?: number; totalDocs?: number; northernUnlocked?: boolean; forceIntakeGate?: boolean; gate5Resolution?: "declined" | "tabled" },
 ): CaseProgress {
   const receivedCount = opts?.receivedCount ?? caseDef.intakeDocs.filter((d) => d.received).length;
   const totalDocs = opts?.totalDocs ?? caseDef.intakeDocs.length;
   const northernUnlocked = opts?.northernUnlocked ?? false;
   const forceIntakeGate = opts?.forceIntakeGate ?? false;
+
+  if (opts?.gate5Resolution === "declined") {
+    return {
+      gateLabel: "Gate 5 declined",
+      gateTone: "deleted",
+      orchestratorStatus: "Credit committee declined the facility — case closed",
+      nextBestAction: "Review runtime log for the committee's written rationale",
+      primaryCta: "View decision",
+      primaryStage: "decision",
+      statusLabel: "Declined",
+    };
+  }
+  if (opts?.gate5Resolution === "tabled") {
+    return {
+      gateLabel: "Gate 5 tabled",
+      gateTone: "warning",
+      orchestratorStatus: "Committee tabled the decision — additional information requested",
+      nextBestAction: "Provide the requested information and resubmit to committee",
+      primaryCta: "View decision",
+      primaryStage: "decision",
+      statusLabel: "In Progress",
+    };
+  }
 
   if (!signed.has("gate1-sign") && forceIntakeGate && (caseId === "walmart" || (caseId === "northern-retail" && !northernUnlocked))) {
     const missing = totalDocs - receivedCount;
@@ -6169,11 +6192,17 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
   );
   const reviewExceptionCount = spreadMappingData.filter((r) => r.confidence === "review").length;
   const remainingExceptions = Math.max(0, reviewExceptionCount - acceptedFields.size);
+  const gate5ResolutionFor = (audit: AuditEvent[]): "declined" | "tabled" | undefined => {
+    if (audit.some((e) => e.id.includes("gate5-decline"))) return "declined";
+    if (audit.some((e) => e.id.includes("gate5-table"))) return "tabled";
+    return undefined;
+  };
   const progress = deriveCaseProgress(caseDef, caseId, signedGateActions, remainingExceptions, {
     receivedCount,
     totalDocs: totalIntakeDocs,
     northernUnlocked: northernPipelineUnlocked,
     forceIntakeGate: stageId === "intake",
+    gate5Resolution: gate5ResolutionFor(caseAudit),
   });
 
   const walmartAudit = auditAppend.filter((e) => e.caseId === "walmart");
@@ -6216,7 +6245,9 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
       northernUnlocked: northernUnlockedForSwitcher,
     },
   );
-  const walmartProgress = deriveCaseProgress(CASES.walmart, "walmart", walmartSigned, walmartExceptions);
+  const walmartProgress = deriveCaseProgress(CASES.walmart, "walmart", walmartSigned, walmartExceptions, {
+    gate5Resolution: gate5ResolutionFor(walmartAudit),
+  });
   const caseSwitcherSubtitles: Record<CaseId, string> = {
     walmart: walmartProgress.gateLabel,
     "northern-retail": northernProgress.gateLabel,
