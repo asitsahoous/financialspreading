@@ -1,19 +1,21 @@
 /**
  * Rendered source financial statement — the "as-filed" document pane.
  *
- * Replaces the old gray CasePdfPane placeholder. Each printed cell is
- * individually addressable by `${tag}@${period}` so an extracted value can jump
- * to and highlight its exact origin (page + cell). Source leaves are clickable;
- * calculated subtotals/totals are printed (as any real statement prints them)
- * but derived from the TRUE values so the document always ties out.
+ * Works for any borrower in the master database (Meridian, Walmart, AutoWest,
+ * Coastal Hyundai). Each printed cell has id `${tag}@${period}` so an
+ * extracted value can jump to and highlight its exact origin (page + cell).
+ * Source leaves are clickable; calculated subtotals/totals are printed (as
+ * any real statement prints them) but derived from the TRUE values so the
+ * document always ties out.
  */
 import { useHostTheme } from "../ui";
-import { MERIDIAN, PERIODS, trueValueMap, type Period } from "./dataset";
+import { COMPANY_PROFILES, PERIODS, trueValueMapFor, type CompanyId, type Period } from "./dataset";
 import { computeValues } from "./engine";
-import { nodesFor, type StatementKind, type TaxonomyNode } from "./taxonomy";
+import { nodesFor, type TaxonomyNode } from "./taxonomy";
 
-export const STATEMENT_PAGES: { page: number; statement: StatementKind; title: string }[] =
-  MERIDIAN.statementPages;
+export function statementPagesFor(companyId: CompanyId) {
+  return COMPANY_PROFILES[companyId].statementPages;
+}
 
 export function cellId(tag: string, period: Period): string {
   return `${tag}@${period}`;
@@ -29,20 +31,24 @@ function fmtStatement(value: number, format: TaxonomyNode["format"]): string {
 }
 
 export function SourceDocument({
+  companyId,
   page,
   highlightCellIds,
   onCellClick,
   periods = PERIODS,
 }: {
+  companyId: CompanyId;
   page: number;
   highlightCellIds: string[];
   onCellClick?: (tag: string, period: Period) => void;
   periods?: Period[];
 }) {
   const theme = useHostTheme();
-  const pageDef = STATEMENT_PAGES.find((p) => p.page === page) ?? STATEMENT_PAGES[0];
+  const profile = COMPANY_PROFILES[companyId];
+  const statementPages = profile.statementPages;
+  const pageDef = statementPages.find((p) => p.page === page) ?? statementPages[0];
   const nodes = nodesFor(pageDef.statement);
-  const trueVals = trueValueMap();
+  const trueVals = trueValueMapFor(companyId);
   const computed: Record<string, Record<string, number>> = {};
   for (const p of periods) computed[p] = mapValues(computeValues(trueVals, p));
   const cols = `1fr repeat(${periods.length}, 84px)`;
@@ -76,7 +82,7 @@ export function SourceDocument({
         }}
       >
         <span>Source document · borrower filing</span>
-        <span>Page {page} of {STATEMENT_PAGES.length}</span>
+        <span>Page {page} of {statementPages.length}</span>
       </div>
 
       {/* "Paper" */}
@@ -96,10 +102,10 @@ export function SourceDocument({
         >
           {/* Document header */}
           <div style={{ textAlign: "center", borderBottom: `2px solid ${theme.text.primary}`, paddingBottom: 10, marginBottom: 12 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: theme.text.primary }}>{MERIDIAN.borrowerName}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: theme.text.primary }}>{profile.borrowerName}</div>
             <div style={{ fontSize: 13, color: theme.text.secondary, marginTop: 2 }}>{pageDef.title}</div>
             <div style={{ fontSize: 11, color: theme.text.tertiary, marginTop: 4 }}>
-              Years ended December 31 · {MERIDIAN.unitsNote}
+              Years ended December 31 · {profile.unitsNote}
             </div>
           </div>
 
@@ -180,8 +186,8 @@ export function SourceDocument({
 
           {/* Footer */}
           <div style={{ marginTop: 16, paddingTop: 8, borderTop: `1px solid ${theme.stroke.tertiary}`, fontSize: 10, color: theme.text.tertiary, display: "flex", justifyContent: "space-between" }}>
-            <span>{MERIDIAN.borrowerName} · FY2025 Annual Financial Statements</span>
-            <span>Page {page} of {STATEMENT_PAGES.length}</span>
+            <span>{profile.borrowerName} · FY2025 Annual Financial Statements</span>
+            <span>Page {page} of {statementPages.length}</span>
           </div>
         </div>
       </div>

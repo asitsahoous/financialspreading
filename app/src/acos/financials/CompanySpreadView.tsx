@@ -1,45 +1,38 @@
 /**
- * Meridian Foods — live financial spreading workspace (master database).
+ * Master financial database workspace — works for any borrower on the engine.
  *
- * Each ingested statement is standardised to the ACOS chart of accounts and
- * mapped into one company-level master database, rendered as period columns for
- * side-by-side comparison (like Capital IQ / CreditLens "compare like-for-like").
- * ACOS layers its differentiators on top: clickable cell+page lineage, live
- * cross-statement integrity, in-cell human correction with rationale (tracked in
- * the case lifecycle), calculated-value dependency drill, and a computed,
- * auditable trust score. Agents do the mapping; humans govern via edits + gates.
+ * Left: the rendered source document (borrower filing). Right: the live
+ * spread, computed by the engine. Every source value traces to its exact
+ * page + cell; every calculated value drills to the dependent source values
+ * it was built from; the balance-sheet / cash-flow integrity checks are
+ * computed live. A company switcher lets the analyst move between every
+ * borrower on the master database (Meridian, Walmart, AutoWest, Coastal
+ * Hyundai) without leaving the workspace.
  */
 import { useState } from "react";
 import { Button, Pill, Row, Stack, Text, useCanvasState, useHostTheme } from "../ui";
 import { showActionToast } from "../state";
 import { SopLink } from "../sopPolicy";
-import { SourceDocument, STATEMENT_PAGES, cellId } from "./SourceDocument";
+import { SourceDocument, statementPagesFor, cellId } from "./SourceDocument";
 import {
-  MERIDIAN,
+  COMPANY_PROFILES,
   PERIODS,
   DEFAULT_INGESTED,
-  extractedValueMap,
-  sourceCell,
+  extractedValueMapFor,
+  sourceCellFor,
+  type CompanyId,
   type Period,
 } from "./dataset";
 import {
   computeValues,
   runIntegrityChecks,
   lineageFor,
+  formatValue,
   type ResolvedValue,
   type LineageNode,
 } from "./engine";
-import {
-  formatUnit,
-  yoyPct,
-  cagrPct,
-  fmtPct,
-  ratioStatus,
-  RATIO_META,
-  healthScorecard,
-  type Unit,
-} from "./analytics";
 import { nodesFor, getNode, type StatementKind } from "./taxonomy";
+import { formatUnit, yoyPct, cagrPct, fmtPct, ratioStatus, RATIO_META, healthScorecard, type Unit } from "./analytics";
 
 const STATEMENT_LABEL: Record<StatementKind, string> = {
   IS: "Income Statement",
@@ -47,9 +40,19 @@ const STATEMENT_LABEL: Record<StatementKind, string> = {
   CF: "Cash Flow",
   RATIO: "Ratios & Analytics",
 };
+
+const CASE_TYPE_LABEL: Record<string, string> = {
+  term_loan_b: "Term Loan B",
+  revolving_credit: "Revolving Credit",
+  floor_plan: "Floor Plan",
+  annual_review: "Annual Review",
+};
+
 const PAGE_OF: Record<StatementKind, number> = { IS: 1, BS: 2, CF: 3, RATIO: 2 };
 type SubTab = "spread" | "trends" | "ratios" | "health" | "source";
 type EditRecord = { id: string; tag: string; period: Period; from: number; to: number; rationale: string; actor: string; at: string };
+
+const COMPANY_ORDER: CompanyId[] = ["walmart", "autowest", "coastal-hyundai", "meridian"];
 
 function collectLeaves(node: LineageNode): LineageNode[] {
   return node.children.length === 0 ? [node] : node.children.flatMap(collectLeaves);
@@ -59,15 +62,48 @@ function nowStamp() {
   return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
 }
 
-export function MeridianSpreadView({ onOpenSop }: { onOpenSop?: (section: string, appliedTo?: string) => void }) {
+export function CompanySpreadView({ onOpenSop }: { onOpenSop?: (section: string, appliedTo?: string) => void }) {
+  const [companyId, setCompanyId] = useCanvasState<CompanyId>("spreadCompanyId", "walmart");
+
+  return (
+    <Stack gap={12} style={{ fontFamily: "Inter, sans-serif" }}>
+      <Row gap={6} align="center" wrap>
+        <Text size="small" weight="semibold">Portfolio:</Text>
+        {COMPANY_ORDER.map((id) => {
+          const p = COMPANY_PROFILES[id];
+          return (
+            <Button
+              key={id}
+              variant={id === companyId ? "primary" : "ghost"}
+              style={{ height: 28, fontSize: 12 }}
+              data-testid={`company-${id}`}
+              onClick={() => setCompanyId(id)}
+            >
+              {p.borrowerName}
+            </Button>
+          );
+        })}
+      </Row>
+      {/* Remount the whole body on company switch — each company owns its own
+          session-scoped state (period, overrides, edits, verification). */}
+      <CompanySpreadBody key={companyId} companyId={companyId} onOpenSop={onOpenSop} />
+    </Stack>
+  );
+}
+
+function CompanySpreadBody({ companyId, onOpenSop }: { companyId: CompanyId; onOpenSop?: (section: string, appliedTo?: string) => void }) {
   const theme = useHostTheme();
-  const [ingested, setIngested] = useCanvasState<Period[]>("meridianIngested", DEFAULT_INGESTED);
-  const [overrides, setOverrides] = useCanvasState<Record<string, number>>("meridianOverrides", {});
-  const [editLog, setEditLog] = useCanvasState<EditRecord[]>("meridianEditLog", []);
-  const [verified, setVerified] = useCanvasState<string[]>("meridianVerified", []);
-  const [unit, setUnit] = useCanvasState<Unit>("meridianUnit", "auto");
-  const [order, setOrder] = useCanvasState<"old2new" | "new2old">("meridianOrder", "old2new");
-  const [subtab, setSubtab] = useCanvasState<SubTab>("meridianSubtab", "spread");
+  const profile = COMPANY_PROFILES[companyId];
+  const statementPages = statementPagesFor(companyId);
+  const ns = (key: string) => `spread:${companyId}:${key}`;
+
+  const [ingested, setIngested] = useCanvasState<Period[]>(ns("ingested"), DEFAULT_INGESTED);
+  const [overrides, setOverrides] = useCanvasState<Record<string, number>>(ns("overrides"), {});
+  const [editLog, setEditLog] = useCanvasState<EditRecord[]>(ns("editLog"), []);
+  const [verified, setVerified] = useCanvasState<string[]>(ns("verified"), []);
+  const [unit, setUnit] = useCanvasState<Unit>(ns("unit"), "auto");
+  const [order, setOrder] = useCanvasState<"old2new" | "new2old">(ns("order"), "old2new");
+  const [subtab, setSubtab] = useCanvasState<SubTab>(ns("subtab"), "spread");
   const [selected, setSelected] = useState<{ tag: string; period: Period } | null>(null);
   const [highlight, setHighlight] = useState<string[]>([]);
   const [docPage, setDocPage] = useState<number>(2);
@@ -77,7 +113,7 @@ export function MeridianSpreadView({ onOpenSop }: { onOpenSop?: (section: string
   const periodsChrono = PERIODS.filter((p) => ingested.includes(p));
   const cols = order === "new2old" ? [...periodsChrono].reverse() : periodsChrono;
   const latest = periodsChrono[periodsChrono.length - 1];
-  const effective = { ...extractedValueMap(), ...overrides };
+  const effective = { ...extractedValueMapFor(companyId), ...overrides };
   const byPeriod: Record<string, Record<string, ResolvedValue>> = {};
   for (const p of periodsChrono) byPeriod[p] = computeValues(effective, p);
   const checksLatest = runIntegrityChecks(byPeriod[latest], latest);
@@ -88,7 +124,7 @@ export function MeridianSpreadView({ onOpenSop }: { onOpenSop?: (section: string
   const verifiedCount = verified.length;
   const openExceptions = periodsChrono.flatMap((p) =>
     sourceTags.filter((t) => {
-      const c = sourceCell(t, p);
+      const c = sourceCellFor(companyId, t, p);
       const id = cellId(t, p);
       return c?.confidence === "review" && overrides[id] === undefined;
     }),
@@ -97,7 +133,7 @@ export function MeridianSpreadView({ onOpenSop }: { onOpenSop?: (section: string
   const verifiedPct = totalCells ? verifiedCount / totalCells : 0;
   const trustScore = Math.round((integrityPassRate * 0.4 + verifiedPct * 0.35 + (openExceptions === 0 ? 1 : 0) * 0.25) * 100);
 
-  function selectSource(tag: string, period: Period) {
+  function focusSourceValue(tag: string, period: Period) {
     setSelected({ tag, period });
     setHighlight([cellId(tag, period)]);
     const n = getNode(tag);
@@ -106,7 +142,7 @@ export function MeridianSpreadView({ onOpenSop }: { onOpenSop?: (section: string
     setEditValue(String(effective[id] ?? ""));
     setEditRationale("");
   }
-  function selectCalc(tag: string, period: Period) {
+  function focusCalculated(tag: string, period: Period) {
     setSelected({ tag, period });
     const lin = lineageFor(tag, byPeriod[period]);
     if (lin) {
@@ -118,8 +154,8 @@ export function MeridianSpreadView({ onOpenSop }: { onOpenSop?: (section: string
   }
   function onCellClick(tag: string, period: Period) {
     const n = getNode(tag);
-    if (n?.kind === "source") selectSource(tag, period);
-    else selectCalc(tag, period);
+    if (n?.kind === "source") focusSourceValue(tag, period);
+    else focusCalculated(tag, period);
   }
 
   function saveCorrection() {
@@ -150,39 +186,46 @@ export function MeridianSpreadView({ onOpenSop }: { onOpenSop?: (section: string
     setVerified((prev) => (prev.includes(id) ? prev : [...prev, id]));
     showActionToast(`Accepted ${getNode(selected.tag)?.label} ${selected.period} — human-verified`);
   }
-  function ingestFY2022() {
+  function ingestPriorYear() {
     setIngested((prev) => (prev.includes("FY2022") ? prev : PERIODS.filter((p) => [...prev, "FY2022"].includes(p))));
-    showActionToast("Mapping Agent standardised FY2022 filing to ACOS chart of accounts — column added");
+    showActionToast(`Mapping Agent standardised FY2022 filing to ACOS chart of accounts — column added for ${profile.borrowerName}`);
   }
 
   return (
-    <Stack gap={12} style={{ fontFamily: "Inter, sans-serif" }}>
+    <Stack gap={12}>
       {/* Header + trust ribbon */}
       <div style={{ border: `1px solid ${theme.stroke.secondary}`, borderRadius: 10, padding: "14px 16px", background: theme.bg.editor }}>
         <Row align="center" justify="space-between" wrap gap={8}>
           <Stack gap={2}>
             <Row gap={8} align="center">
-              <Text weight="semibold" style={{ fontSize: 16 }}>{MERIDIAN.borrowerName}</Text>
+              <Text weight="semibold" style={{ fontSize: 16 }}>{profile.borrowerName}</Text>
               <Pill tone="info">Master financial database</Pill>
+              <Pill tone="neutral">{CASE_TYPE_LABEL[profile.caseType]}</Pill>
             </Row>
             <Text size="small" tone="tertiary">
-              {MERIDIAN.entityType} · EIN {MERIDIAN.ein.slice(0, 6)}••• · {MERIDIAN.headquarters} · {MERIDIAN.auditor}
+              {profile.entityType} · EIN {profile.ein.slice(0, 6)}••• · {profile.headquarters} · {profile.auditor}
             </Text>
           </Stack>
-          <TrustRibbon trustScore={trustScore} verifiedCount={verifiedCount} totalCells={totalCells} openExceptions={openExceptions} checks={checksLatest} theme={theme} />
-        </Row>
-        <Row gap={6} align="center" wrap style={{ marginTop: 10 }}>
-          <Text size="small" tone="quaternary">Mapping Agent standardised {periodsChrono.length} filings to ACOS chart of accounts.</Text>
-          {!ingested.includes("FY2022") && (
-            <Button variant="ghost" style={{ height: 24, fontSize: 11 }} data-testid="ingest-fy2022" onClick={ingestFY2022}>
-              ＋ Ingest prior-year statement (FY2022)
-            </Button>
-          )}
+          <Stack gap={4} style={{ alignItems: "flex-end" }}>
+            <Row gap={4} align="center">
+              {PERIODS.map((p) => (
+                <Pill key={p} tone={ingested.includes(p) ? "info" : "neutral"}>
+                  {p}
+                </Pill>
+              ))}
+            </Row>
+            <Text size="small" tone="quaternary">
+              {sourceTags.length} source values extracted · taxonomy-constrained
+            </Text>
+          </Stack>
         </Row>
       </div>
 
-      {/* Integrity banner */}
-      <IntegrityBanner checks={checksLatest} period={latest} onTrace={() => selectCalc("BS.TOTAL_ASSETS", latest)} theme={theme} />
+      {/* Live integrity banner */}
+      <IntegrityBanner checks={checksLatest} period={latest} onTrace={() => focusCalculated("BS.TOTAL_ASSETS", latest)} theme={theme} />
+
+      {/* Trust ribbon */}
+      <TrustRibbon trustScore={trustScore} verifiedCount={verifiedCount} totalCells={totalCells} openExceptions={openExceptions} checks={checksLatest} theme={theme} />
 
       {/* Controls */}
       <Row gap={12} align="center" justify="space-between" wrap>
@@ -194,9 +237,14 @@ export function MeridianSpreadView({ onOpenSop }: { onOpenSop?: (section: string
           ))}
         </Row>
         <Row gap={12} align="center" wrap>
+          {!ingested.includes("FY2022") && (
+            <Button variant="ghost" style={{ height: 24, fontSize: 11 }} data-testid="ingest-fy2022" onClick={ingestPriorYear}>
+              ＋ Ingest prior-year statement (FY2022)
+            </Button>
+          )}
           <Row gap={4} align="center">
             <Text size="small" tone="tertiary">Unit:</Text>
-            {(["auto", "K", "MM", "B"] as Unit[]).map((u) => (
+            {(["auto", "K", "MM", "B"] as const).map((u) => (
               <Button key={u} variant={u === unit ? "secondary" : "ghost"} style={{ height: 24, fontSize: 11, minWidth: 34, textTransform: u === "auto" ? "capitalize" : "none" }} data-testid={`unit-${u}`} onClick={() => setUnit(u)}>
                 {u}
               </Button>
@@ -210,7 +258,7 @@ export function MeridianSpreadView({ onOpenSop }: { onOpenSop?: (section: string
 
       {/* Body */}
       {subtab === "spread" && (
-        <SpreadGrid statements={["IS", "BS", "CF"]} cols={cols} byPeriod={byPeriod} unit={unit} overrides={overrides} selected={selected} onCellClick={onCellClick} theme={theme} />
+        <SpreadGrid companyId={companyId} statements={["IS", "BS", "CF"]} cols={cols} byPeriod={byPeriod} unit={unit} overrides={overrides} selected={selected} onCellClick={onCellClick} theme={theme} />
       )}
       {subtab === "trends" && <TrendsGrid periodsChrono={periodsChrono} cols={cols} byPeriod={byPeriod} theme={theme} />}
       {subtab === "ratios" && <RatiosGrid cols={cols} byPeriod={byPeriod} onOpenSop={onOpenSop} theme={theme} />}
@@ -219,13 +267,13 @@ export function MeridianSpreadView({ onOpenSop }: { onOpenSop?: (section: string
         <Row gap={12} align="start">
           <Stack gap={8} style={{ flex: "0 0 48%", minWidth: 320 }}>
             <Row gap={6} wrap>
-              {STATEMENT_PAGES.map((sp) => (
+              {statementPages.map((sp) => (
                 <Button key={sp.page} variant={sp.page === docPage ? "secondary" : "ghost"} style={{ height: 24, fontSize: 11 }} data-testid={`docpage-${sp.statement}`} onClick={() => setDocPage(sp.page)}>
                   {STATEMENT_LABEL[sp.statement]}
                 </Button>
               ))}
             </Row>
-            <SourceDocument page={docPage} highlightCellIds={highlight} periods={periodsChrono} onCellClick={selectSource} />
+            <SourceDocument companyId={companyId} page={docPage} highlightCellIds={highlight} periods={periodsChrono} onCellClick={focusSourceValue} />
           </Stack>
           <Stack gap={8} style={{ flex: 1, minWidth: 0 }}>
             <Text size="small" tone="tertiary">Click a value in any tab to trace it here. Source values show origin cell + confidence; calculated values expand to their dependencies.</Text>
@@ -242,6 +290,7 @@ export function MeridianSpreadView({ onOpenSop }: { onOpenSop?: (section: string
               onOpenSop={onOpenSop}
               editLog={editLog}
               verified={verified}
+              companyId={companyId}
               theme={theme}
             />
           </Stack>
@@ -263,6 +312,7 @@ export function MeridianSpreadView({ onOpenSop }: { onOpenSop?: (section: string
           onOpenSop={onOpenSop}
           editLog={editLog}
           verified={verified}
+          companyId={companyId}
           theme={theme}
         />
       )}
@@ -276,19 +326,21 @@ function TrustRibbon({ trustScore, verifiedCount, totalCells, openExceptions, ch
 }) {
   const integrityOk = checks.every((c) => c.pass);
   const cell = (label: string, value: string, tone: "ok" | "warn" | "bad") => (
-    <Stack gap={0} style={{ alignItems: "flex-end", padding: "0 10px", borderLeft: `1px solid ${theme.stroke.tertiary}` }}>
+    <Stack gap={0} style={{ alignItems: "flex-start", padding: "0 14px", borderLeft: `1px solid ${theme.stroke.tertiary}` }}>
       <Text size="small" style={{ fontWeight: 700, color: tone === "bad" ? "#B42018" : tone === "warn" ? "#C08532" : "#1F8A65" }}>{value}</Text>
       <Text size="small" tone="quaternary">{label}</Text>
     </Stack>
   );
   return (
-    <Row gap={0} align="center" data-testid="trust-ribbon">
-      {cell("Trust score", `${trustScore}%`, trustScore >= 80 ? "ok" : trustScore >= 55 ? "warn" : "bad")}
-      {cell("Human-verified", `${verifiedCount}/${totalCells}`, verifiedCount === totalCells ? "ok" : "warn")}
-      {cell("Open exceptions", `${openExceptions}`, openExceptions === 0 ? "ok" : "bad")}
-      {cell("Integrity", integrityOk ? "3/3" : `${checks.filter((c) => c.pass).length}/3`, integrityOk ? "ok" : "bad")}
-      {cell("Lineage", "100%", "ok")}
-    </Row>
+    <div data-testid="trust-ribbon" style={{ border: `1px solid ${theme.stroke.secondary}`, borderRadius: 8, padding: "8px 4px", background: theme.bg.editor }}>
+      <Row gap={0} align="center">
+        {cell("Trust score", `${trustScore}%`, trustScore >= 80 ? "ok" : trustScore >= 55 ? "warn" : "bad")}
+        {cell("Human-verified", `${verifiedCount}/${totalCells}`, verifiedCount === totalCells ? "ok" : "warn")}
+        {cell("Open exceptions", `${openExceptions}`, openExceptions === 0 ? "ok" : "bad")}
+        {cell("Integrity", integrityOk ? "3/3" : `${checks.filter((c) => c.pass).length}/3`, integrityOk ? "ok" : "bad")}
+        {cell("Lineage", "100%", "ok")}
+      </Row>
+    </div>
   );
 }
 
@@ -302,7 +354,9 @@ function IntegrityBanner({ checks, period, onTrace, theme }: {
       <Row gap={10} align="center" wrap>
         <span style={{ fontSize: 16 }}>{ok ? "✓" : "⚠"}</span>
         <Text size="small" weight="semibold">
-          {ok ? `Integrity checks pass for ${period} — statements tie out` : `Integrity check failed for ${period}`}
+          {ok
+            ? `Integrity checks pass for ${period} — statements tie out`
+            : `Integrity check failed for ${period}`}
         </Text>
         {checks.map((c) => (
           <Pill key={c.id} tone={c.pass ? "success" : "deleted"}>
@@ -312,15 +366,23 @@ function IntegrityBanner({ checks, period, onTrace, theme }: {
       </Row>
       {!ok && (
         <Text size="small" tone="secondary" style={{ marginTop: 6 }}>
-          The platform caught a discrepancy the extraction agent introduced —{" "}
-          <span style={{ color: theme.accent.primary, cursor: "pointer", textDecoration: "underline" }} onClick={onTrace}>trace Total Assets</span>, then correct the flagged cell to re-balance.
+          {failing[0].lhsLabel} {formatValue(failing[0].lhs, "currency")} vs {failing[0].rhsLabel}{" "}
+          {formatValue(failing[0].rhs, "currency")}. The platform caught a discrepancy the extraction agent introduced —{" "}
+          <span
+            style={{ color: theme.accent.primary, cursor: "pointer", textDecoration: "underline" }}
+            onClick={onTrace}
+          >
+            trace Total Assets
+          </span>
+          .
         </Text>
       )}
     </div>
   );
 }
 
-function SpreadGrid({ statements, cols, byPeriod, unit, overrides, selected, onCellClick, theme }: {
+function SpreadGrid({ companyId, statements, cols, byPeriod, unit, overrides, selected, onCellClick, theme }: {
+  companyId: CompanyId;
   statements: StatementKind[]; cols: Period[]; byPeriod: Record<string, Record<string, ResolvedValue>>;
   unit: Unit; overrides: Record<string, number>; selected: { tag: string; period: Period } | null;
   onCellClick: (tag: string, period: Period) => void; theme: ReturnType<typeof useHostTheme>;
@@ -344,7 +406,7 @@ function SpreadGrid({ statements, cols, byPeriod, unit, overrides, selected, onC
                 {cols.map((p) => {
                   const rv = byPeriod[p]?.[node.tag];
                   const id = cellId(node.tag, p);
-                  const cell = node.kind === "source" ? sourceCell(node.tag, p) : undefined;
+                  const cell = node.kind === "source" ? sourceCellFor(companyId, node.tag, p) : undefined;
                   const corrected = overrides[id] !== undefined;
                   const isException = cell?.confidence === "review" && !corrected;
                   const isSel = selected?.tag === node.tag && selected?.period === p;
@@ -469,19 +531,19 @@ function HealthCard({ resolved, period, theme }: { resolved: Record<string, Reso
   );
 }
 
-function ProvenancePanel({ selected, byPeriod, editValue, editRationale, setEditValue, setEditRationale, onSave, onAccept, onDrill, onOpenSop, editLog, verified, theme }: {
+function ProvenancePanel({ selected, byPeriod, editValue, editRationale, setEditValue, setEditRationale, onSave, onAccept, onDrill, onOpenSop, editLog, verified, companyId, theme }: {
   selected: { tag: string; period: Period } | null;
   byPeriod: Record<string, Record<string, ResolvedValue>>;
   editValue: string; editRationale: string; setEditValue: (v: string) => void; setEditRationale: (v: string) => void;
   onSave: () => void; onAccept: () => void; onDrill: (tag: string, period: Period) => void; onOpenSop?: (s: string, a?: string) => void;
-  editLog: EditRecord[]; verified: string[]; theme: ReturnType<typeof useHostTheme>;
+  editLog: EditRecord[]; verified: string[]; companyId: CompanyId; theme: ReturnType<typeof useHostTheme>;
 }) {
   if (!selected) return <Text size="small" tone="tertiary">Select a value to see its lineage.</Text>;
   const { tag, period } = selected;
   const node = getNode(tag);
   const rv = byPeriod[period]?.[tag];
   if (!node || !rv) return null;
-  const cell = node.kind === "source" ? sourceCell(tag, period) : undefined;
+  const cell = node.kind === "source" ? sourceCellFor(companyId, tag, period) : undefined;
   const id = cellId(tag, period);
   const isVerified = verified.includes(id);
   const history = editLog.filter((e) => e.tag === tag && e.period === period);
@@ -528,12 +590,19 @@ function ProvenancePanel({ selected, byPeriod, editValue, editRationale, setEdit
           <Text size="small" tone="secondary" style={{ fontFamily: "monospace" }}>{node.formula}</Text>
           <Row gap={6} wrap>
             {(lineageFor(tag, byPeriod[period])?.children ?? []).map((child) => (
-              <span key={child.tag} onClick={() => onDrill(child.tag, period)} style={{ border: `1px solid ${theme.stroke.secondary}`, borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer", background: theme.bg.editor }} title="Drill into this dependency">
-                {child.label}: <strong>{getNode(child.tag)?.format === "ratio" ? `${child.value.toFixed(2)}x` : `$${Math.round(child.value).toLocaleString("en-US")}K`}</strong>
+              <span
+                key={child.tag}
+                onClick={() => onDrill(child.tag, period)}
+                style={{ border: `1px solid ${theme.stroke.secondary}`, borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer", background: theme.bg.editor }}
+                title="Drill into this dependency"
+              >
+                {child.label}: <strong>{formatValue(child.value, getNode(child.tag)?.format ?? "currency")}</strong>
               </span>
             ))}
           </Row>
-          <Text size="small" tone="tertiary">Highlighted source cells on the left feed this value. Click a dependency to drill further.</Text>
+          <Text size="small" tone="tertiary">
+            Highlighted source cells on the left feed this value. Click a dependency to drill further.
+          </Text>
         </Stack>
       )}
 

@@ -21,7 +21,8 @@ import {
 import { useCallback, useEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { resetDemoSession, showActionToast } from "./state";
 import { renderTextWithSopLinks, SopLink, SopViewerPanel } from "./sopPolicy";
-import { MeridianSpreadView } from "./financials/MeridianSpread";
+import { CompanySpreadView } from "./financials/CompanySpreadView";
+import type { CompanyId } from "./financials/dataset";
 
 /** Minimal shape used for click-outside checks — avoids importing React.MouseEvent, which
  *  is not exported the same way across the app's Vite/@types-react setup and the Canvas
@@ -1978,18 +1979,18 @@ const CASE_ROWS: CaseRowData[] = [
   {
     id: "AWM-002",
     entity: "AutoWest Motors",
-    stageBadge: "Covenant Breach",
+    stageBadge: "Floor Plan · Covenant Breach",
     triggerType: "Covenant Breach",
     extractionConf: 68,
-    exposure: "$12.4M",
-    netMarginPct: "-12.20%",
+    exposure: "$59.4M",
+    netMarginPct: "-3.40%",
     healthScore: 2.1,
     riskStatus: "High Risk",
     primaryConcern: "Debt Service Failure",
     tasks: 3,
     action: "Resolve",
     aiBlurb:
-      "DSCR < 1.10x detected: Operational expenses increased 12% YoY, causing a breach in the primary debt service covenant. Immediate restructuring conversation required.",
+      "DSCR 0.00x — EBIT turned negative and can no longer service floor-plan debt. Inventory utilization climbing toward the 80% ceiling (SOP §3.4). Immediate restructuring conversation required.",
   },
   {
     id: "TRC-003",
@@ -2071,17 +2072,17 @@ const CASE_ROWS: CaseRowData[] = [
   {
     id: "CHY-008",
     entity: "Coastal Hyundai",
-    stageBadge: "New Loan Intake",
-    triggerType: "New Loan",
+    stageBadge: "Annual Review",
+    triggerType: "Annual Review",
     extractionConf: 95,
-    exposure: "$15.5M",
-    netMarginPct: "3.80%",
-    healthScore: 7.2,
+    exposure: "$19.5M",
+    netMarginPct: "2.30%",
+    healthScore: 7.1,
     riskStatus: "Low Risk",
     primaryConcern: "None (Performing)",
     tasks: 0,
     action: "Review",
-    aiBlurb: "Clean financials — all ratios within covenant bounds. New loan request eligible for fast-track.",
+    aiBlurb: "Clean financials — all ratios within covenant bounds, improving D/E trend. Annual re-certification eligible for fast-track per SOP §4.4.",
   },
   {
     id: "NRT-009",
@@ -4550,10 +4551,12 @@ function CreditMemoFullView({
 
 function PortfolioView({
   openCase,
+  openSpread,
   theme,
   onOpenTrustLayer,
 }: {
   openCase: (id: CaseId, stage?: StageId, fromRow?: CaseRowData) => void;
+  openSpread?: (companyId: CompanyId) => void;
   theme: FigmaTheme;
   onOpenTrustLayer?: () => void;
 }) {
@@ -4659,7 +4662,7 @@ function PortfolioView({
               <Text size="small" tone="tertiary">Generated Mar 17, 6:00 AM</Text>
             </Row>
             <Text>
-              Current Ratio 0.79x (covenant &gt;1.2x). D/E 0.46x within limit. Revenue trend -12% YoY on spread.
+              Current Ratio 0.82x (covenant &gt;1.2x). D/E 0.46x within limit. Revenue trend -12% YoY on spread.
             </Text>
             <Text size="small" tone="secondary">
               Evidence: FY2025 spread · Covenant schedule §3.1 · Bloomberg peer median 1.4x
@@ -4675,14 +4678,14 @@ function PortfolioView({
               <Text weight="semibold" size="small">
                 AutoWest Motors — Covenant breach
               </Text>
-              <Pill tone="warning">Warning</Pill>
+              <Pill tone="deleted">Critical</Pill>
             </Row>
             <Row gap={8} align="center">
               <AgentTag agentId="sentinel" theme={theme} />
-              <Text size="small" tone="tertiary">DSCR 0.95x · Floor plan utilization 88%</Text>
+              <Text size="small" tone="tertiary">Current Ratio 0.61x (req ≥1.20x) · DSCR 0.00x (req ≥1.25x) — debt service coverage failure</Text>
             </Row>
-            <Button variant="ghost" onClick={() => openCase("walmart", "assessment")}>
-              View case → Walmart assessment (AutoWest demo)
+            <Button variant="ghost" onClick={() => openSpread?.("autowest")}>
+              View case → AutoWest master financial database
             </Button>
           </Stack>
         </div>
@@ -4714,11 +4717,13 @@ function PortfolioView({
 
 function CommandCenterView({
   openCase,
+  openSpread,
   theme,
   onOpenTrustLayer,
   onOpenCreditPolicy,
 }: {
   openCase: (id: CaseId, stage?: StageId, fromRow?: CaseRowData) => void;
+  openSpread?: (companyId: CompanyId) => void;
   theme: FigmaTheme;
   onOpenTrustLayer?: () => void;
   onOpenCreditPolicy?: () => void;
@@ -4779,23 +4784,22 @@ function CommandCenterView({
             title="AutoWest Motors"
             trailing={<Pill tone="deleted">SLA 4h</Pill>}
             theme={theme}
-            demoLabel="Synthetic portfolio queue — demo breadth"
             trustFooter={
               <QueueTrustFooter
-                gate="Gate 3 pending"
+                gate="Trust score 25%"
                 reviewMin="20 min"
-                stageLabel="Assessment"
+                stageLabel="Floor Plan · Master DB"
                 theme={theme}
-                onViewStage={() => openCase("walmart", "assessment")}
+                onViewStage={() => openSpread?.("autowest")}
               />
             }
           >
             <AgentTag agentId="sentinel" theme={theme} />
             <Text size="small" tone="secondary">
-              Covenant breach: Current Ratio 0.85x (req &gt;1.2x). DSCR 0.95x.
+              Covenant breach: Current Ratio 0.61x (req ≥1.20x). DSCR 0.00x (req ≥1.25x) — debt service coverage failure.
             </Text>
-            <Button variant="primary" onClick={() => openCase("walmart", "assessment")}>
-              Open Walmart assessment (AutoWest demo)
+            <Button variant="primary" onClick={() => openSpread?.("autowest")}>
+              Open AutoWest master financial database
             </Button>
           </DxpQueueCard>
         </Stack>
@@ -4908,12 +4912,12 @@ function CommandCenterView({
           ],
           [
             "AutoWest Motors",
-            "Assessment",
+            "Floor Plan · Master DB",
             <AgentTag agentId="sentinel" theme={theme} />,
-            "Sentinel: covenant breach detected",
+            "Sentinel: DSCR 0.00x covenant breach detected",
             "~1.2 days",
             <Pill tone="deleted">Critical</Pill>,
-            <Button variant="ghost" onClick={() => openCase("walmart", "assessment")}>View alert (Walmart demo)</Button>,
+            <Button variant="ghost" onClick={() => openSpread?.("autowest")}>View alert</Button>,
           ],
           [
             "Borrower 5",
@@ -7488,7 +7492,7 @@ function ViewInFocusToggle({ theme }: { theme: FigmaTheme }) {
   );
 }
 
-function CaseRowExpansion({ row, theme, openCase }: { row: CaseRowData; theme: FigmaTheme; openCase?: (id: CaseId, stage?: StageId) => void }) {
+function CaseRowExpansion({ row, theme, openCase }: { row: CaseRowData; theme: FigmaTheme; openCase?: (id: CaseId, stage?: StageId, fromRow?: CaseRowData) => void }) {
   const previewRows = MAPPING_DATA.slice(0, 4);
   const { caseId: targetCase, stage: targetStage } = caseRouteForRowId(row.id);
   return (
@@ -7512,7 +7516,7 @@ function CaseRowExpansion({ row, theme, openCase }: { row: CaseRowData; theme: F
         <Row align="center" justify="space-between">
           <Text size="small" tone="quaternary">Showing 4 of 140 fields</Text>
           {openCase && (
-            <Button variant="primary" style={{ height: 28, fontSize: 11 }} onClick={() => openCase(targetCase, targetStage)}>
+            <Button variant="primary" style={{ height: 28, fontSize: 11 }} onClick={() => openCase(targetCase, targetStage, row)}>
               Open full case →
             </Button>
           )}
@@ -8009,13 +8013,31 @@ export default function FinancialSpreadingACOS() {
   const [, setPortfolioBannerDismissed] = useCanvasState<boolean>("portfolioBannerDismissed", false);
   const [sopViewer, setSopViewer] = useCanvasState<{ section: string; appliedTo?: string } | null>("sopViewerOpen", null);
   const [trustLayerOpen, setTrustLayerOpen] = useCanvasState<boolean>("trustLayerOpen", false);
+  const [, setSpreadCompanyId] = useCanvasState<CompanyId>("spreadCompanyId", "walmart");
 
   const openTrustLayer = () => setTrustLayerOpen(true);
   const openCreditPolicy = () => setSopViewer({ section: "§4.2", appliedTo: "Credit Policy" });
 
   const [, setDetailTab] = useCanvasState<CaseDetailTab>("caseDetailTab", "extracted");
 
+  /** Rows for these two borrowers now have their own real data on the master database — open the live spread, not a mismatched Walmart workspace. */
+  const SPREAD_ROW_COMPANY: Record<string, CompanyId> = { AWM: "autowest", CHY: "coastal-hyundai" };
+
+  const openSpread = (companyId: CompanyId) => {
+    setSpreadCompanyId(companyId);
+    setView("spreading");
+    setCreateOpen(false);
+  };
+
   const openCase = (id: CaseId, stage?: StageId, fromRow?: CaseRowData) => {
+    if (fromRow) {
+      const prefix = fromRow.id.split("-")[0];
+      const spreadCompany = SPREAD_ROW_COMPANY[prefix];
+      if (spreadCompany) {
+        openSpread(spreadCompany);
+        return;
+      }
+    }
     setCaseId(id);
     const resolvedStage = stage ?? CASES[id].defaultStage;
     setStageId(resolvedStage);
@@ -8071,17 +8093,18 @@ export default function FinancialSpreadingACOS() {
         {view === "command" && (
           <CommandCenterView
             openCase={openCase}
+            openSpread={openSpread}
             theme={theme}
             onOpenTrustLayer={openTrustLayer}
             onOpenCreditPolicy={openCreditPolicy}
           />
         )}
-        {view === "portfolio" && <PortfolioView openCase={openCase} theme={theme} onOpenTrustLayer={openTrustLayer} />}
+        {view === "portfolio" && <PortfolioView openCase={openCase} openSpread={openSpread} theme={theme} onOpenTrustLayer={openTrustLayer} />}
         {view === "caselist" && <CasesListView theme={theme} openCase={openCase} onOpenTrustLayer={openTrustLayer} />}
         {view === "case" && <CaseWorkspaceView theme={theme} />}
         {view === "agents" && <AgentCatalogView theme={theme} onOpenTrustLayer={openTrustLayer} />}
         {view === "spreading" && (
-          <MeridianSpreadView onOpenSop={(section, appliedTo) => setSopViewer({ section, appliedTo })} />
+          <CompanySpreadView onOpenSop={(section, appliedTo) => setSopViewer({ section, appliedTo })} />
         )}
       </DxpShell>
       <ActionToastBanner theme={theme} />

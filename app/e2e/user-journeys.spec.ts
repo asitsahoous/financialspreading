@@ -122,7 +122,7 @@ test.describe("Financial analyst user journeys", () => {
     await expect(page.getByText("§4.2.3 — Q3 cash flow statement")).toBeVisible();
   });
 
-  test("Journey 10 — Synthetic borrower shows portfolio banner", async ({ page }) => {
+  test("Journey 10 — AutoWest Motors opens its own real workspace, not Walmart's", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "Cases", exact: true }).click();
     await page
@@ -130,8 +130,11 @@ test.describe("Financial analyst user journeys", () => {
       .filter({ hasText: "AutoWest Motors" })
       .getByRole("button", { name: "Resolve" })
       .click();
-    await expect(page.getByText("Portfolio drill-down: AutoWest Motors")).toBeVisible();
-    await expect(page.getByText("Walmart spread template for demo depth")).toBeVisible();
+    await expect(page.getByText("AutoWest Motors", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Master financial database")).toBeVisible();
+    await expect(page.getByText("Floor Plan")).toBeVisible();
+    // must NOT fall back to the Walmart template — this borrower has its own data
+    await expect(page.getByText("Walmart Inc. Spread", { exact: true })).toHaveCount(0);
   });
 
   test("Journey 11 — All CASE_ROWS routes open without error", async ({ page }) => {
@@ -150,8 +153,10 @@ test.describe("Financial analyst user journeys", () => {
     await page.goto("/");
     await page.getByRole("button", { name: "Cases", exact: true }).click();
 
+    // These two borrowers now have real data on the master database.
+    const realSpreadRows = new Set(["AutoWest Motors", "Coastal Hyundai"]);
+    // Remaining synthetic rows stay on the honest "Portfolio drill-down" illustrative pattern.
     const portfolioRows = new Set([
-      "AutoWest Motors",
       "Tesla Rental Corp",
       "Vantage Rental",
       "Hertz Global",
@@ -167,6 +172,11 @@ test.describe("Financial analyst user journeys", () => {
         .click();
       if (row.entity === "Northern Retail LLC") {
         await expect(page.getByText("Northern Retail LLC", { exact: true }).first()).toBeVisible();
+      } else if (realSpreadRows.has(row.entity)) {
+        await expect(page.getByText(row.entity, { exact: true }).first()).toBeVisible();
+        await expect(page.getByText("Master financial database")).toBeVisible();
+        await page.getByRole("button", { name: "Cases", exact: true }).click();
+        continue;
       } else if (portfolioRows.has(row.entity)) {
         await expect(page.getByText(`Portfolio drill-down: ${row.entity}`)).toBeVisible();
       } else {
@@ -235,17 +245,19 @@ test.describe("Financial analyst user journeys", () => {
   test("Journey 17 — Financial Spread master database + live integrity", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "Financial Spread" }).click();
-    await expect(page.getByText("Master financial database")).toBeVisible();
+    await expect(page.getByText("Master financial database").first()).toBeVisible();
+    // Walmart is the default borrower — its own seeded defect (PP&E scale error)
     await expect(page.getByTestId("integrity-banner")).toContainText("Integrity check failed for FY2025");
-    await expect(page.getByTestId("integrity-banner")).toContainText("off by 23,670");
     // period columns present in the standardised spread
     await expect(page.getByTestId("cell-IS.REVENUE-FY2023")).toBeVisible();
     await expect(page.getByTestId("cell-IS.REVENUE-FY2025")).toBeVisible();
   });
 
-  test("Journey 18 — In-cell correction recomputes and re-balances", async ({ page }) => {
+  test("Journey 18 — In-cell correction recomputes and re-balances (Meridian)", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "Financial Spread" }).click();
+    await page.getByTestId("company-meridian").click();
+    await expect(page.getByTestId("integrity-banner")).toContainText("off by 23,670");
     await page.getByTestId("cell-BS.INVENTORY-FY2025").click();
     await page.getByTestId("edit-value").fill("26300");
     await page.getByTestId("edit-rationale").fill("Source page 2 shows 26,300 — OCR scale error corrected");
@@ -271,5 +283,19 @@ test.describe("Financial analyst user journeys", () => {
     await expect(page.getByText("Policy threshold")).toBeVisible();
     await page.getByTestId("subtab-health").click();
     await expect(page.getByText("Composite health", { exact: false })).toBeVisible();
+  });
+
+  test("Journey 21 — Portfolio switcher moves between all four real borrowers", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Financial Spread" }).click();
+    await expect(page.getByText("Walmart Inc.", { exact: true }).first()).toBeVisible();
+    await page.getByTestId("company-autowest").click();
+    await expect(page.getByText("AutoWest Motors", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Floor Plan")).toBeVisible();
+    await expect(page.getByTestId("integrity-banner")).toContainText("Integrity check failed");
+    await page.getByTestId("company-coastal-hyundai").click();
+    await expect(page.getByText("Coastal Hyundai", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Annual Review")).toBeVisible();
+    await expect(page.getByTestId("integrity-banner")).toContainText("Integrity checks pass");
   });
 });
