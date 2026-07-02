@@ -57,13 +57,14 @@ app/
 │   │   ├── ui.tsx                 # UI primitives (Canvas API shim)
 │   │   ├── theme.ts               # Figma BMO light tokens
 │   │   ├── state.ts               # Session-persisted demo state
-│   │   └── financials/            # Live financial-spreading engine (Meridian Foods)
+│   │   └── financials/            # Live financial-spreading engine — multi-company master database
 │   │       ├── taxonomy.ts        # Chart of accounts: source vs calculated nodes + dependsOn
-│   │       ├── dataset.ts         # Generated 3-statement model, FY2022–25, ties out; 1 seeded defect
+│   │       ├── generator.ts       # Parametric 3-statement generator — cash solved as the plug so BS/CF tie by construction
+│   │       ├── dataset.ts         # Company registry (Walmart, AutoWest, Coastal Hyundai, Meridian) + per-company accessors
 │   │       ├── engine.ts          # computeValues / runIntegrityChecks / lineageFor / formatting
 │   │       ├── analytics.ts       # Units, YoY/CAGR, ratio thresholds, health scorecard
-│   │       ├── SourceDocument.tsx # Rendered clickable statement pages (cell+page lineage)
-│   │       └── MeridianSpread.tsx # Master-DB workspace: Spread/Trends/Ratios/Health/Source tabs
+│   │       ├── SourceDocument.tsx # Rendered clickable statement pages (cell+page lineage), any company
+│   │       └── CompanySpreadView.tsx # Master-DB workspace + Portfolio switcher: Spread/Trends/Ratios/Health/Source tabs
 │   ├── main.tsx
 │   └── index.css
 ├── netlify.toml                   # SPA redirect for deploy
@@ -75,16 +76,21 @@ app/
 1. **Command Center** — overnight agent queues, trust footers, agent queue table  
 2. **Insight** — agent/trust KPIs, active cases table, Sentinel alerts, charts  
 3. **Cases** — lifecycle rail, stage trace, workspaces, Trust Inspector, runtime log  
-4. **Financial Spread** — Meridian Foods master financial database: period-column spread standardised to the ACOS chart of accounts, cell+page lineage, calculated-value dependency drill, in-cell correction with rationale (live recompute), cross-statement integrity checks, computed trust score, and Trends / Ratios / Health analytics  
+4. **Financial Spread** — portfolio-wide master financial database (Walmart, AutoWest Motors, Coastal Hyundai, Meridian Foods on one engine): period-column spread standardised to the ACOS chart of accounts, cell+page lineage, calculated-value dependency drill, in-cell correction with rationale (live recompute), cross-statement integrity checks, computed trust score, and Trends / Ratios / Health analytics  
 5. **Agents** — catalog + last-24h activity strip  
 
 ### Financial Spread — how "real" it is
 
 No backend, but the spreading is a genuine deterministic model, not fixtures:
 - **Taxonomy-constrained extraction** — a chart of accounts (`taxonomy.ts`) decides what is a *source* value vs a *calculated* one; calculated nodes are recomputed by the engine, never trusted from the page.
-- **Ties out** — the generated dataset (`dataset.ts`) is internally consistent (BS balances, CF ties to cash, NI ties, RE rolls) across FY2022–FY2025, with one deliberately seeded OCR defect (FY2025 Inventory) that breaks the balance sheet until corrected.
+- **Ties out by construction** — `generator.ts` produces each company's dataset from compact business assumptions, solving cash as the plug from the indirect-method cash flow statement, so Balance Sheet balances and Cash Flow ties to cash are guaranteed, not hand-balanced. Verified programmatically for all 4 companies × 4 periods.
+- **One seeded defect per distressed borrower** — Walmart (PP&E), AutoWest (Inventory — its floor-plan collateral line), Meridian (Inventory) each carry a deliberate OCR-scale-error exception; Coastal Hyundai has none (a clean annual review).
 - **Lineage** — every value traces to its exact source page + cell; calculated values drill to their dependencies.
 - **Human-in-the-loop** — correct any cell with a required rationale; dependents recompute live, integrity re-runs, and the edit is logged to the change history.
+
+### Credit Policy — how "real" it is
+
+`sopPolicy.tsx` is a genuine enterprise commercial-credit policy, not a stub: purpose/scope, 4 case-type definitions (Term Loan B, Revolving Credit, Floor Plan, Annual Review), covenant testing protocol, per-scenario document manifests, exception management & escalation policy, AML/KYC, an approval-authority matrix by exposure, and a credit committee charter. The chart-of-accounts and ratio-policy clauses (§5, §7–9, §10) are **generated directly from `taxonomy.ts`/`analytics.ts`** so every citation used anywhere in the app resolves to a real clause — verified programmatically (0 broken citations across 57 unique § references).
 - **Measurable trust** — the trust score is computed from coverage + human-verification + open exceptions + integrity, and moves as you correct/verify.
 
 ### Interactive demo actions

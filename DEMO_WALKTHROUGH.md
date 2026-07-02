@@ -23,7 +23,7 @@ A plain-language guide for presenting the demo. No engineering background requir
 | **Command Center** | Morning queue — what needs your attention |
 | **InSight** | Portfolio view (note the capital **S** — not "Insight") |
 | **Cases** | Full case list and case workspaces |
-| **Financial Spread** | Master financial database for a borrower (Meridian Foods) — period-column spread, lineage, in-cell edit, trends/ratios/health, measurable trust |
+| **Financial Spread** | Master financial database, portfolio-wide — Walmart, AutoWest Motors, Coastal Hyundai, Meridian Foods on one engine. Period-column spread, lineage, in-cell edit, trends/ratios/health, measurable trust |
 | **Agents** | Catalog of the 10 demo agents |
 
 Other useful buttons in the top bar: **Trust Layer** (explains the trust model), **Credit Policy** (opens the SOP viewer).
@@ -81,29 +81,40 @@ Do the 5-minute Walmart path first, then add the exception story.
 
 ---
 
-## Financial Spread — the master database deep-dive (Meridian Foods)
+## Financial Spread — the master database deep-dive (portfolio-wide)
 
-This is the newest and deepest surface. It shows **Trust** and **Agent-first** on the actual spreading grid where S&P, Moody's, and Evalueserve compete.
+This is the deepest surface. It shows **Trust** and **Agent-first** on the actual spreading grid where S&P, Moody's, and Evalueserve compete — across **four real borrowers on one engine**, not one-off fixtures.
 
-Click the **Financial Spread** tab. You land on **Meridian Foods Co.** — one borrower whose statements are standardised into a single **master financial database** and shown as period columns.
+Click the **Financial Spread** tab. A **Portfolio** switcher at the top lets you move between all four:
+
+| Borrower | Scenario (SOP case type) | Story |
+|----------|---------------------------|-------|
+| **Walmart Inc.** | Term Loan B | Flagship — PP&E scale-error exception, real rendered 10-K-style statements |
+| **AutoWest Motors** | Floor Plan | Distressed dealer — DSCR 0.00x, negative equity, Health grade E, Inventory misread exception (the floor-plan collateral line) |
+| **Coastal Hyundai** | Annual Review | Healthy dealer — Health grade B, DSCR 1.5x, clean statements with **no** seeded exception (a routine re-certification) |
+| **Meridian Foods Co.** | Term Loan B | Original showcase borrower — Inventory scale-error exception |
+
+Each borrower's statements are standardised to the same ACOS chart of accounts and shown as period columns — genuinely tied out (Balance Sheet balances, Cash Flow ties to cash) and independently session-scoped, so acting on one borrower never affects another's numbers.
 
 | Step | Click this | You should see |
 |------|------------|----------------|
-| 1 | **Financial Spread** tab | Meridian Foods header + a **trust ribbon** (Trust score, Human-verified, Open exceptions, Integrity, Lineage). A **red integrity banner**: "Balance sheet balances: off by 23,670" |
-| 2 | Look at the **Spread** grid | Income Statement / Balance Sheet / Cash Flow with **FY2023–FY2025 columns** — side-by-side like Yahoo Finance / Capital IQ. **Inventory FY2025** is red (flagged) |
-| 3 | **＋ Ingest prior-year statement (FY2022)** | A new **FY2022 column** appears — the master database grew |
-| 4 | **Unit** toggle (Auto / K / MM / B) and **Order** | Numbers reformat; column order flips |
-| 5 | Click the red **Inventory FY2025** value | A **lineage strip** opens: source page 2, the exact cell, low confidence, agent note ("source shows 26,300, read 2,630") |
-| 6 | Type **26300**, add a **rationale**, click **Save correction** | Subtotals/totals/ratios **recompute live**, the integrity banner turns **green**, the exception clears, and the **Trust score jumps (≈27% → 65%)**. A **change-history** line is logged |
-| 7 | Click a **calculated** value (e.g. a total or Current Ratio) | Its **formula expands** and it drills to the source values it depends on |
-| 8 | **Trends** tab | YoY growth + CAGR per line |
-| 9 | **Ratios** tab | Ratios across periods vs **policy covenants** (pass/warn/fail) with § links |
-| 10 | **Health** tab | Composite **financial-health grade** (A–E) with liquidity/leverage/coverage/profitability pillars |
-| 11 | **Source & Lineage** tab | The rendered borrower statement pages; click cells to trace both directions |
+| 1 | **Financial Spread** tab | Walmart Inc. by default; a **Portfolio** row of buttons for all four borrowers |
+| 2 | Click **AutoWest Motors** | Header switches instantly; a **red integrity banner** — its own seeded exception, distinct from Walmart's |
+| 3 | Click **Coastal Hyundai** | **Green** integrity banner — no exception; Health tab shows grade **B** |
+| 4 | Click **Walmart Inc.** → look at the **Spread** grid | Income Statement / Balance Sheet / Cash Flow with **FY2023–FY2025 columns** — side-by-side like Yahoo Finance / Capital IQ. **PP&E FY2025** is red (flagged) |
+| 5 | **＋ Ingest prior-year statement (FY2022)** | A new **FY2022 column** appears for *that* borrower — the master database grew |
+| 6 | **Unit** toggle (Auto / K / MM / B) and **Order** | Numbers reformat; column order flips |
+| 7 | Click the red **PP&E FY2025** value | A **lineage strip** opens: source page 2, the exact cell, low confidence, agent note (an OCR scale error) |
+| 8 | Enter the corrected value + a **rationale**, click **Save correction** | Subtotals/totals/ratios **recompute live**, the integrity banner turns **green**, the exception clears, and the **Trust score jumps**. A **change-history** line is logged |
+| 9 | Click a **calculated** value (e.g. a total or Current Ratio) | Its **formula expands** and it drills to the source values it depends on |
+| 10 | **Trends** tab | YoY growth + CAGR per line |
+| 11 | **Ratios** tab | Ratios across periods vs **policy covenants** (pass/warn/fail) with § links into the real Credit Policy |
+| 12 | **Health** tab | Composite **financial-health grade** (A–E) with liquidity/leverage/coverage/profitability pillars |
+| 13 | **Source & Lineage** tab | The rendered borrower statement pages; click cells to trace both directions |
 
-**One-liner for the audience:** "Every number traces to a source cell, every calculation traces to its inputs, the statements check themselves, and trust is a number you can audit — that's what we add on top of the like-for-like spread the incumbents sell."
+**One-liner for the audience:** "Every number traces to a source cell, every calculation traces to its inputs, the statements check themselves, and trust is a number you can audit — across the whole portfolio, not one demo borrower."
 
-**Note:** The Financial Spread state (ingested periods, corrections, verifications) persists for the browser session and is cleared by **Reset demo**.
+**Note:** Each borrower's Financial Spread state (ingested periods, corrections, verifications) is independently session-scoped and cleared by **Reset demo**.
 
 ---
 
