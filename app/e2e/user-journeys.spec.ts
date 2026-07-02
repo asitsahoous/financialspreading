@@ -328,4 +328,22 @@ test.describe("Financial analyst user journeys", () => {
     await page.getByTestId("confidence-filter-review").click();
     await expect(page.getByText(/Showing 1.*of 140 fields/)).toBeVisible();
   });
+
+  test("Journey 24 — Gate 5 committee can Decline, not just approve or override", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Review mapping" }).click();
+    await page.getByTestId("inspect-exception-total-assets").click();
+    await page.getByRole("button", { name: "Accept mapping" }).click();
+    await page.getByRole("button", { name: "Sign Gate 2 — Approve spread" }).click();
+    await page.getByRole("button", { name: "Sign Gate 3 — Approve risk assessment" }).click();
+    await page.getByRole("button", { name: "Credit Memo stage" }).click();
+    await page.getByRole("button", { name: "Sign Gate 4 — Approve memo" }).click();
+    await page.getByTestId("gate5-decline").click();
+    await expect(page.getByText("Gate 5 — Declined").first()).toBeVisible();
+    await expect(page.getByText(/DECLINED.*No appeal gate beyond Gate 5/).first()).toBeVisible();
+    // All three committee actions lock once a decision is recorded.
+    await expect(page.getByRole("button", { name: "Sign Gate 5 — Approve committee decision" })).toBeDisabled();
+    await expect(page.getByTestId("gate5-decline")).toBeDisabled();
+    await expect(page.getByTestId("gate5-table")).toBeDisabled();
+  });
 });

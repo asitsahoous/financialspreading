@@ -2943,6 +2943,8 @@ type GateAction =
   | { kind: "gate3-sign" }
   | { kind: "gate4-sign" }
   | { kind: "gate5-sign" }
+  | { kind: "gate5-decline" }
+  | { kind: "gate5-table" }
   | { kind: "mapping-accept"; field: string }
   | { kind: "mapping-override"; field: string; correctedValue?: string; note?: string }
   | { kind: "intake-override" }
@@ -3058,8 +3060,17 @@ function GateSignOffBar({
         <Button variant="primary" disabled={disabled} onClick={() => onAction({ kind: "gate5-sign" })}>
           Sign Gate 5 — Approve committee decision
         </Button>
-        <Button variant="ghost" disabled={disabled} onClick={() => onAction({ kind: "mapping-override", field: "committee-decision" })}>
-          Request revisions (logged)
+        <Button
+          variant="ghost"
+          disabled={disabled}
+          data-testid="gate5-decline"
+          style={{ borderColor: "#B42018", color: "#B42018" }}
+          onClick={() => onAction({ kind: "gate5-decline" })}
+        >
+          Decline (SOP §14)
+        </Button>
+        <Button variant="ghost" disabled={disabled} data-testid="gate5-table" onClick={() => onAction({ kind: "gate5-table" })}>
+          Table — request more information
         </Button>
       </Row>
     );
@@ -3291,6 +3302,32 @@ function makeAuditEvent(caseId: CaseId, action: GateAction): AuditEvent {
       input: "Committee package — Decision score 5.45/10 · Conditional Approve (Negotiate)",
       reasoning: "Committee reviewed spread quality, connector bundle, and covenant headroom — approved negotiated structure",
       output: "Gate 5 passed — case closed with Conditional Approve; facility terms documented in memo",
+    };
+  }
+  if (action.kind === "gate5-decline") {
+    return {
+      id: `audit-${Date.now()}-gate5-decline`,
+      caseId,
+      time: now,
+      stage: "Credit Decision",
+      actorKind: "human",
+      actor: "Credit Committee",
+      input: "Committee package — Decision score 5.45/10 · reviewed for final vote",
+      reasoning: "Committee vote per SOP §14 — quorum reached; facility risk profile does not meet institution policy for approval at requested terms",
+      output: "Gate 5 — DECLINED. Case closed; written rationale entered against Gate 5 per SOP §14. No appeal gate beyond Gate 5.",
+    };
+  }
+  if (action.kind === "gate5-table") {
+    return {
+      id: `audit-${Date.now()}-gate5-table`,
+      caseId,
+      time: now,
+      stage: "Credit Decision",
+      actorKind: "human",
+      actor: "Credit Committee",
+      input: "Committee package — Decision score 5.45/10 · reviewed for final vote",
+      reasoning: "Committee tabled the decision per SOP §14 — additional information requested before a final vote; this is a deferral, not a rejection",
+      output: "Gate 5 — TABLED. Returned to analyst for additional information; case remains open pending re-submission to committee.",
     };
   }
   if (action.kind === "mapping-accept") {
@@ -6285,6 +6322,10 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
         setDetailTab("exceptions");
         return;
       }
+      if (action.kind === "gate5-sign" && caseAudit.some((e) => e.id.includes("gate5"))) {
+        showActionToast("Gate 5 already has a committee decision recorded this session");
+        return;
+      }
       const event = makeAuditEvent(caseId, action);
       setAuditAppend((prev) => [...prev, event]);
       if (action.kind === "gate2-sign") {
@@ -6302,12 +6343,21 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
       }
       return;
     }
+    if (action.kind === "gate5-decline" || action.kind === "gate5-table") {
+      const gate5AlreadyResolved = caseAudit.some((e) => e.id.includes("gate5"));
+      if (gate5AlreadyResolved) {
+        showActionToast("Gate 5 already has a committee decision recorded this session");
+        return;
+      }
+    }
     const event = makeAuditEvent(caseId, action);
     setAuditAppend((prev) => [...prev, event]);
     if (action.kind === "intake-override") showActionToast("Intake override logged to audit trail");
     else if (action.kind === "intake-doc-request") showActionToast("Doc request reminder sent — pipeline remains blocked");
     else if (action.kind === "mapping-accept") showActionToast(`Accepted mapping for ${action.field}`);
     else if (action.kind === "mapping-override") showActionToast("Override logged with reason and timestamp");
+    else if (action.kind === "gate5-decline") showActionToast("Gate 5 declined — committee vote recorded, case closed per SOP §14");
+    else if (action.kind === "gate5-table") showActionToast("Gate 5 tabled — additional information requested, case remains open");
   };
 
   const switchCase = (id: CaseId) => {
@@ -7113,13 +7163,29 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
                   <Callout tone="info" title="Committee package ready">
                     Decision Synthesis Agent recommends Conditional Approve (score 5.45/10). Spread, bureau
                     verification, AML/KYC attestation, and connector evidence bundle attached. Gate 5 sign-off
-                    required to close the case.
+                    required to close the case. Committee composition, quorum, and decision options governed by{" "}
+                    <SopLink section="§14" appliedTo="Gate 5 — Credit committee decision" onOpen={openSop} />.
                   </Callout>
+                  {(() => {
+                    const gate5Event = caseAudit.find((e) => e.id.includes("gate5"));
+                    if (!gate5Event) return null;
+                    const tone = gate5Event.id.includes("decline") ? "danger" : gate5Event.id.includes("table") ? "warning" : "success";
+                    const title = gate5Event.id.includes("decline")
+                      ? "Gate 5 — Declined"
+                      : gate5Event.id.includes("table")
+                        ? "Gate 5 — Tabled (additional information requested)"
+                        : "Gate 5 — Approved";
+                    return (
+                      <Callout tone={tone} title={title}>
+                        {gate5Event.output}
+                      </Callout>
+                    );
+                  })()}
                   <Row gap={8} wrap>
                     <GateSignOffBar
                       mode="gate5-sign"
                       theme={theme}
-                      disabled={signedGateActions.has("gate5-sign")}
+                      disabled={caseAudit.some((e) => e.id.includes("gate5"))}
                       onAction={(action) => appendAudit(action)}
                     />
                     <Button variant="secondary" onClick={() => setMemoOpen(true)}>
