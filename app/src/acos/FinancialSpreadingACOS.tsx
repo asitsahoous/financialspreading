@@ -6427,6 +6427,21 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
     [backendCaseId],
   );
 
+  // Same fire-and-forget pattern, for the two non-approve Gate 5 committee
+  // outcomes. Note: only the click itself is persisted here — the local
+  // "already resolved this session" guards below still key off the local
+  // audit log, not a backend refetch, so this doesn't yet survive a reload
+  // the way Gate 1–5 approve does (see docs/KNOWN_ISSUES.md).
+  const persistGate5Resolution = useCallback(
+    (status: "rejected" | "tabled", reason: string) => {
+      if (!backendCaseId) return;
+      signBackendGate(backendCaseId, "gate5", "Credit Committee", reason, status).catch(() =>
+        setBackendSyncError(`Gate 5 ${status === "rejected" ? "decline" : "table"} didn't reach the backend — it will not survive a reload.`),
+      );
+    },
+    [backendCaseId],
+  );
+
   // Same fire-and-forget pattern as persistGateToBackend, but only for
   // fields known to exist on both the frontend fixture and the backend's
   // seeded exception data (see BACKEND_WIRED_MAPPING_FIELDS in backendCase.ts).
@@ -6511,8 +6526,13 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
       showActionToast("Override logged with reason and timestamp");
       persistMappingActionToBackend(action);
     }
-    else if (action.kind === "gate5-decline") showActionToast("Gate 5 declined — committee vote recorded, case closed per SOP §14");
-    else if (action.kind === "gate5-table") showActionToast("Gate 5 tabled — additional information requested, case remains open");
+    else if (action.kind === "gate5-decline") {
+      showActionToast("Gate 5 declined — committee vote recorded, case closed per SOP §14");
+      persistGate5Resolution("rejected", "Committee vote per SOP §14 — declined");
+    } else if (action.kind === "gate5-table") {
+      showActionToast("Gate 5 tabled — additional information requested, case remains open");
+      persistGate5Resolution("tabled", "Committee tabled per SOP §14 — additional information requested");
+    }
   };
 
   const switchCase = (id: CaseId) => {

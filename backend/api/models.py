@@ -16,7 +16,7 @@ class CreateCaseRequest(BaseModel):
 
 class GateDecisionRequest(BaseModel):
     gate_id: str
-    status: Literal["approved", "override", "rejected"]
+    status: Literal["approved", "override", "rejected", "tabled"]
     actor: str
     reason: str | None = None
 

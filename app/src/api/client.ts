@@ -41,7 +41,7 @@ export interface CaseResponse {
 export interface GateRecord {
   gate_id: string;
   label: string;
-  status: "approved" | "override" | "rejected" | "pending";
+  status: "approved" | "override" | "rejected" | "tabled" | "pending";
   actor: string | null;
   signed_at: string | null;
   reason: string | null;
@@ -101,7 +101,7 @@ export interface CreateCaseBody {
 
 export interface GateDecisionBody {
   gate_id: string;
-  status: "approved" | "override" | "rejected";
+  status: "approved" | "override" | "rejected" | "tabled";
   actor: string;
   reason?: string;
 }

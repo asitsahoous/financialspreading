@@ -86,7 +86,24 @@ export async function ensureBackendCase(role: BackendCaseRole): Promise<string> 
       borrower_ein: seed.ein,
       documents: TERM_LOAN_B_DOCS.map((name, i) => ({ name, received: i < seed.receivedCount })),
     })
-    .then((res) => {
+    .then(async (res) => {
+      // IMPORTANT: the backend graph pauses at Gate 1's interrupt_before
+      // boundary immediately on case creation and stays there until
+      // explicitly resumed — regardless of whether intake is complete.
+      // The Walmart happy-path UI starts directly at "Review" (Gate 2) and
+      // never clicks "Sign Gate 1" (its narrative treats intake as already
+      // done). Without this, the *next* gate call's resume value gets
+      // consumed by Gate 1's still-pending interrupt() instead of the gate
+      // the UI actually targeted — every subsequent gate ends up recorded
+      // one step behind (gate2's payload lands under "gate1", etc). Only
+      // do this when intake is actually complete (Walmart's seed); Northern
+      // Retail's seed is intentionally partial and signs Gate 1 for real
+      // through the Intake UI once documents are received.
+      if (seed.receivedCount === TERM_LOAN_B_DOCS.length) {
+        await signBackendGate(res.case_id, "gate1", "Sarah W. (Credit Analyst)").catch(() => {
+          /* best-effort — if this fails, the first real gate action will surface the sync error */
+        });
+      }
       writeCachedCaseId(role, res.case_id);
       return res.case_id;
     })
@@ -193,14 +210,15 @@ export async function receiveBackendDocument(
 
 export type BackendGateId = "gate1" | "gate2" | "gate3" | "gate4" | "gate5";
 
-/** Persists a gate approval to the real backend. Throws on failure — callers decide the UX fallback. */
+/** Persists a gate decision to the real backend. Throws on failure — callers decide the UX fallback. */
 export async function signBackendGate(
   caseId: string,
   gateId: BackendGateId,
   actor: string,
   reason?: string,
+  status: "approved" | "override" | "rejected" | "tabled" = "approved",
 ): Promise<CaseResponse> {
-  return acosApi.signGate(caseId, gateId, { gate_id: gateId, status: "approved", actor, reason });
+  return acosApi.signGate(caseId, gateId, { gate_id: gateId, status, actor, reason });
 }
 
 /** `gates["gate1"].status` → the frontend's `GateSignKind` union, for the 5 sign actions this module wires up. */

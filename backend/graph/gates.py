@@ -203,7 +203,7 @@ def gate5_node(state: CreditCaseState) -> dict:
     existing_gates = state.get("gates", {})
     g5 = existing_gates.get("gate5", {})
 
-    if g5.get("status") in ("approved", "override", "rejected"):
+    if g5.get("status") in ("approved", "override", "rejected", "tabled"):
         return {}
 
     decision = interrupt({

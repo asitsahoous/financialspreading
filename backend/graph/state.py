@@ -16,7 +16,7 @@ StageId = Literal[
     "assessment", "memo", "decision", "complete"
 ]
 GateId = Literal["gate1", "gate2", "gate3", "gate4", "gate5"]
-GateDecision = Literal["approved", "override", "rejected", "pending"]
+GateDecision = Literal["approved", "override", "rejected", "tabled", "pending"]
 Confidence = Literal["high", "review", "missing"]
 RiskTier = Literal["Low Risk", "Moderate Risk", "High Risk"]
 
