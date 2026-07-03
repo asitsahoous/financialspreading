@@ -9,7 +9,25 @@ Phased by **priority and technical dependency**, not calendar time (team size/ve
 
 ## Progress
 
-**2026-07-02:** A narrowed slice of Phase 0 shipped — Gate 1–5 sign-off for the Walmart and Northern Retail demo cases is now real (backend-persisted via a provisioned Supabase Postgres project, survives reload/restart), and 3 previously-unknown backend bugs were found and fixed in the process (the backend had never actually completed a case end-to-end before — see [KNOWN_ISSUES.md Progress log](KNOWN_ISSUES.md#progress-log) for detail). Document intake, mapping/exceptions, overrides, Gate 5 decline/table, and the full Postgres data model (§3 below) remain as originally scoped — not yet started. Document-schema reconciliation (frontend fixture doc names vs. backend's fixed SOP manifest) is a newly-identified prerequisite for wiring document intake, added to this phase's remaining scope.
+### Checkpoint — 2026-07-03
+
+**What's real now (backend-persisted, survives reload + full backend restart, concurrency-safe):**
+- Case creation, document intake, Gate 1–5 sign-off (approve/override/reject/table) for the Walmart and Northern Retail demo cases
+- The 6 core mapping fields (Total Assets, Cash & Equivalents, Receivables/net, Long-term Debt, Shareholders Equity, Revenue) — Trust Inspector accept/override persists for real
+- Collaborator Avatars show real gate-signer initials
+- Credit Memo PDF export produces a genuine PDF (verified `%PDF-1.3` header), not a text file
+
+**Infrastructure provisioned but not yet cut over:** a Supabase Postgres project (`financial-spreading-board`, us-east-1, id `xqygzqedhkgvyqqfreds`) exists for the LangGraph checkpointer, but the DB password was never retrievable via API — someone needs to grab it from the Supabase dashboard (Project Settings → Database) and paste it into `backend/.env`'s `DATABASE_URL`. Everything above has only been verified against local SQLite.
+
+**5 real bugs found and fixed along the way** (not just planned features — see [KNOWN_ISSUES.md Progress log](KNOWN_ISSUES.md#progress-log) for full detail on each): a checkpointer context-manager misuse and an async/sync mismatch that meant the backend had never completed a case end-to-end before this work; a gate off-by-one bug where every signature was recorded one gate behind; a concurrent-request race in the same read-modify-write pattern; and a toast race condition where a passive background sync failure could silently clobber a user-relevant toast (this one had been misdiagnosed as e2e flakiness for several rounds before being properly root-caused).
+
+**Deliberately deferred, with reasons (not oversights):**
+- AutoWest/Costco/Target as real cases — explicitly documented as intentional demo-breadth placeholders; making them real means authoring new company narratives from scratch, a different kind of task than everything above
+- Splitting the 8,280-line frontend file — real value, but a mechanical refactor touching every line carries a different risk profile (a missed import silently breaks the whole app) than the verified, behavior-preserving fixes above
+- Real XLSX export, InSight Assist chat, ratio-trend computation, Portfolio Sentinel real aggregation — each is a net-new small/medium feature, not a fix to something existing
+- Phase 1 (real OCR/LLM extraction) and auth/RBAC — both need a vendor/provider decision and credentials from the user, not just implementation time
+
+**Everything above is committed and pushed to `origin/main`** (7 commits this session, most recent `abb5416`). All 24 Playwright e2e tests pass as of this checkpoint.
 
 ## Phase 0 — Foundation (blocks everything else)
 
