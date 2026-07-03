@@ -243,3 +243,29 @@ export function backendGatesToSignedKinds(gates: Record<string, GateRecord> | un
   }
   return signed;
 }
+
+function initialsFromActorName(name: string): string {
+  // "Sarah W. (Credit Analyst)" -> "SW"; "Credit Committee" -> "CC".
+  const base = name.replace(/\s*\([^)]*\)\s*/g, "").trim();
+  const parts = base.split(/\s+/).filter(Boolean);
+  const letters = parts.map((p) => p[0]).join("").toUpperCase();
+  return letters.slice(0, 2) || "?";
+}
+
+/**
+ * Distinct initials of everyone who has actually signed a gate on this case,
+ * in gate order — replaces the hardcoded ["SW", "MC", "J"] collaborator
+ * avatars with the real signer list.
+ */
+export function backendGateCollaboratorInitials(gates: Record<string, GateRecord> | undefined): string[] {
+  if (!gates) return [];
+  const seen = new Set<string>();
+  const initials: string[] = [];
+  for (const gateId of ["gate1", "gate2", "gate3", "gate4", "gate5"]) {
+    const actor = gates[gateId]?.actor;
+    if (!actor || seen.has(actor)) continue;
+    seen.add(actor);
+    initials.push(initialsFromActorName(actor));
+  }
+  return initials;
+}

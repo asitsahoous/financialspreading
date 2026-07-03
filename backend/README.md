@@ -105,16 +105,14 @@ curl http://localhost:8000/api/v1/portfolio
 | Connector Sync | `graph/nodes/connector.py` | — |
 | Portfolio Sentinel | `graph/nodes/sentinel.py` | — (scheduled) |
 
-## Connecting real LLMs (optional)
+## Connecting real LLMs (not yet implemented)
 
-Add to `.env`:
-```
-OPENAI_API_KEY=sk-...
-# or
-ANTHROPIC_API_KEY=claude-...
-```
-
-The agents will automatically use LLM-based reasoning for extraction, review, and decision nodes when a key is present. Without keys, they use deterministic SOP-based logic (identical output for demo purposes).
+`.env.example` reserves `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` for this, and `langchain-openai`/`langchain-anthropic`
+are in `requirements.txt`, but **no node currently branches on their presence** — `document_intel.py`,
+`mapping.py`, and `decision.py` all run the same hardcoded/deterministic SOP-based logic whether or not a key is
+set. Wiring in real LLM-based reasoning for extraction, mapping, and decision synthesis is tracked as Phase 1 of
+`docs/ROADMAP.md` in the parent `financial-spreading-board` repo — it needs a vendor/approach decision before
+implementation, not just an API key.
 
 ## Production deployment
 

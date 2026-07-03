@@ -25,6 +25,7 @@ import { CompanySpreadView } from "./financials/CompanySpreadView";
 import type { CompanyId } from "./financials/dataset";
 import {
   BACKEND_WIRED_MAPPING_FIELDS,
+  backendGateCollaboratorInitials,
   backendGatesToSignedKinds,
   ensureBackendCase,
   fetchBackendCase,
@@ -6156,15 +6157,21 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
   // ── Real backend sync (Gate 1–5 sign-off only — see backendCase.ts) ────────
   const [backendCaseId, setBackendCaseId] = useState<string | null>(null);
   const [backendSignedGates, setBackendSignedGates] = useState<Set<string>>(new Set());
-  const [backendSyncError, setBackendSyncError] = useState<string | null>(null);
+  const [backendCollaboratorInitials, setBackendCollaboratorInitials] = useState<string[]>([]);
 
   const refreshBackendGates = useCallback(async (id: string) => {
     const res = await fetchBackendCase(id);
     if (res) {
       setBackendSignedGates(backendGatesToSignedKinds(res.gates));
-      setBackendSyncError(null);
+      setBackendCollaboratorInitials(backendGateCollaboratorInitials(res.gates));
     } else {
-      setBackendSyncError("Could not reach the ACOS backend — gate signatures won't be saved this session.");
+      // Passive background reconciliation (runs on every case load, not a
+      // direct user action) — log only, don't toast. Toasting here can
+      // clobber whatever toast a just-completed user action already showed,
+      // since the app only ever displays one toast at a time (see
+      // showActionToast) — this exact race caused an intermittent e2e
+      // failure (Journey 4) under Playwright's rapid sequential test runs.
+      console.error(`[backend sync] Could not reach the ACOS backend for case ${id}.`);
     }
   }, []);
 
@@ -6195,16 +6202,14 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
         return Promise.all([refreshBackendGates(id), refreshBackendDocuments(id, caseId)]);
       })
       .catch(() => {
-        if (!cancelled) setBackendSyncError("Could not reach the ACOS backend — gate signatures won't be saved this session.");
+        if (!cancelled) {
+          console.error(`[backend sync] Could not create/load backend case for role "${role}".`);
+        }
       });
     return () => {
       cancelled = true;
     };
   }, [caseId, refreshBackendGates, refreshBackendDocuments]);
-
-  useEffect(() => {
-    if (backendSyncError) showActionToast(backendSyncError);
-  }, [backendSyncError]);
 
   const caseDef = CASES[caseId];
   const mergedIntakeDocs = mergeIntakeDocs(caseDef.intakeDocs, intakeDocOverrides[caseId]);
@@ -6355,7 +6360,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
       }));
       if (backendCaseId) {
         receiveBackendDocument(backendCaseId, docName, "J. Martinez (Credit Analyst)", sizeKb, classification, file?.name).catch(
-          () => setBackendSyncError(`"${docName}" received didn't reach the backend — it will not survive a reload.`),
+          () => showActionToast(`"${docName}" received didn't reach the backend — it will not survive a reload.`),
         );
       }
       const nextCount = receivedCount + 1;
@@ -6425,7 +6430,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
       const gateId = kind.replace("-sign", "") as BackendGateId;
       signBackendGate(backendCaseId, gateId, "Sarah W. (Credit Analyst)")
         .then((res) => setBackendSignedGates(backendGatesToSignedKinds(res.gates)))
-        .catch(() => setBackendSyncError(`Gate ${gateId} sign didn't reach the backend — it will not survive a reload.`));
+        .catch(() => showActionToast(`Gate ${gateId} sign didn't reach the backend — it will not survive a reload.`));
     },
     [backendCaseId],
   );
@@ -6439,7 +6444,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
     (status: "rejected" | "tabled", reason: string) => {
       if (!backendCaseId) return;
       signBackendGate(backendCaseId, "gate5", "Credit Committee", reason, status).catch(() =>
-        setBackendSyncError(`Gate 5 ${status === "rejected" ? "decline" : "table"} didn't reach the backend — it will not survive a reload.`),
+        showActionToast(`Gate 5 ${status === "rejected" ? "decline" : "table"} didn't reach the backend — it will not survive a reload.`),
       );
     },
     [backendCaseId],
@@ -6458,7 +6463,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
         ? "Analyst accepted the agent-mapped value as correct."
         : action.note || "Analyst-corrected value via Trust Inspector.";
       overrideBackendField(backendCaseId, action.field, correctedValue, reason, "Sarah W. (Credit Analyst)").catch(() =>
-        setBackendSyncError(`Correction for ${action.field} didn't reach the backend — it will not survive a reload.`),
+        showActionToast(`Correction for ${action.field} didn't reach the backend — it will not survive a reload.`),
       );
     },
     [backendCaseId, spreadMappingData],
@@ -6652,7 +6657,9 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
               <Text size="small" tone="quaternary">···</Text>
             </Row>
             <Row gap={8} align="center">
-              <CollaboratorAvatars theme={theme} initials={["SW", "MC", "J"]} />
+              {backendCollaboratorInitials.length > 0 && (
+                <CollaboratorAvatars theme={theme} initials={backendCollaboratorInitials} />
+              )}
               <Button
                 variant="ghost"
                 style={{ height: 28, fontSize: 11 }}
