@@ -19,6 +19,7 @@ import {
   useHostTheme,
 } from "./ui";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import jsPDF from "jspdf";
 import { resetDemoSession, showActionToast } from "./state";
 import { renderTextWithSopLinks, SopLink, SopViewerPanel } from "./sopPolicy";
 import { CompanySpreadView } from "./financials/CompanySpreadView";
@@ -76,6 +77,137 @@ function downloadExportFile(filename: string, body: string, mime = "text/plain;c
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Real PDF generation for the Credit Memo export — replaces the former
+ * "Export as PDF (demo)" placeholder that downloaded a plain-text file.
+ * Mirrors the same content as CreditMemoFullView's `sections` (rating,
+ * borrower profile, benchmarking, loan request, financials, ratio
+ * analysis) as a genuine multi-page PDF via jsPDF.
+ */
+function buildCreditMemoPdf(caseRef: string): jsPDF {
+  const doc = new jsPDF();
+  const marginX = 18;
+  const contentWidth = doc.internal.pageSize.getWidth() - marginX * 2;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  let y = 20;
+
+  const ensureSpace = (h: number) => {
+    if (y + h > pageHeight - 18) {
+      doc.addPage();
+      y = 20;
+    }
+  };
+  const heading = (text: string) => {
+    ensureSpace(10);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text(text, marginX, y);
+    y += 8;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+  };
+  const paragraph = (text: string) => {
+    const lines = doc.splitTextToSize(text, contentWidth) as string[];
+    ensureSpace(lines.length * 5.2);
+    doc.text(lines, marginX, y);
+    y += lines.length * 5.2 + 4;
+  };
+  const table = (headers: string[], rows: string[][]) => {
+    ensureSpace((rows.length + 1) * 6);
+    doc.setFont("helvetica", "bold");
+    doc.text(headers.join("   |   "), marginX, y);
+    y += 6;
+    doc.setFont("helvetica", "normal");
+    for (const row of rows) {
+      ensureSpace(6);
+      doc.text(row.join("   |   "), marginX, y);
+      y += 6;
+    }
+    y += 4;
+  };
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text(`Credit Memo — ${caseRef}`, marginX, y);
+  y += 9;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text(`Generated ${new Date().toLocaleString()}`, marginX, y);
+  doc.setTextColor(0);
+  y += 10;
+
+  heading("Rating & Recommendation Summary");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.text("Final Risk Rating: 5.45 / 10.0", marginX, y);
+  y += 8;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  paragraph(
+    'The "High Risk" categorization is driven by a combination of factors. The primary weaknesses are the ' +
+      "company's poor profitability, high leverage, and weak liquidity ratios. The negative tangible net " +
+      "worth and consistent net losses are significant red flags. However, the score is prevented from being " +
+      "lower by several mitigating factors.",
+  );
+  paragraph(
+    "The company's core operations generate strong and consistent cash flow, and the interest coverage " +
+      "ratio is improving. Most importantly, the very low loan-to-value on the vehicle fleet provides a " +
+      "substantial collateral cushion, reducing the potential for loss in a default scenario.",
+  );
+  paragraph("Risk Category: High Risk   |   Normalization: Balanced   |   Extraction Confidence: Verified");
+
+  heading("Borrower Profile & Ownership");
+  paragraph(
+    "Walmart Inc. — publicly traded (NYSE: WMT) — incorporated Delaware — EIN 71-0415188 — 2 UBO profiles " +
+      "screened (SSN match, PEP/sanctions clear). Controlling shareholder: Walton family trust (48.7%). " +
+      "No material adverse ownership change since last review.",
+  );
+
+  heading("Competitive Benchmarking");
+  table(
+    ["Peer", "Rating", "Current Ratio", "D/E", "Net Margin"],
+    [
+      ["Costco", "AA", "1.21x", "0.38x", "2.7%"],
+      ["Target", "A", "0.99x", "0.44x", "3.1%"],
+      ["Walmart (WMT)", "Watchlist", "0.82x", "0.46x", "-8.5%"],
+    ],
+  );
+
+  heading("Loan Request");
+  table(
+    ["Field", "Value"],
+    [
+      ["Request amount", "$750M"],
+      ["Facility type", "Corporate Revolving Credit"],
+      ["Tenor", "36 months"],
+      ["Proposed rate", "SOFR + 225bps"],
+      ["Collateral", "Vehicle fleet (LTV 25.6%)"],
+      ["Jurisdiction", "Delaware"],
+    ],
+  );
+
+  heading("Key Financial Metrics");
+  table(
+    ["Metric", "FY2025", "FY2026", "Trend"],
+    [
+      ["Revenue", "$680.9B", "$713.2B", "+4.7%"],
+      ["Net Income", "$20.2B", "$22.3B", "+10.4%"],
+      ["EBITDA margin", "N/A", "N/A", "N/A"],
+      ["Current Ratio", "0.79x", "0.82x", "Below 1.2x"],
+      ["D/E Ratio", "0.44x", "0.46x", "Within 0.55x"],
+    ],
+  );
+
+  heading("Financial Ratio Analysis — Profitability");
+  paragraph(
+    "Net Profit Margin improving YoY to 3.1%. ROA stable at 0.08x. EBIT Margin data pending final audited " +
+      "statements. Risk Agent assessment: profitability trajectory is positive but leverage remains elevated.",
+  );
+
+  return doc;
 }
 
 function ActionToastBanner({ theme }: { theme: FigmaTheme }) {
@@ -3753,14 +3885,12 @@ function ExportDropdown({ theme, caseRef }: { theme: FigmaTheme; caseRef: string
   const close = useCallback(() => setOpen(false), [setOpen]);
   useDismissOnOutside(open, close, rootRef);
 
-  const handleExport = (format: "PDF" | "Excel") => {
-    const isPdfDemo = format === "PDF";
-    const ext = isPdfDemo ? "txt" : "csv";
-    const mime = "text/plain;charset=utf-8";
-    const body = isPdfDemo
-      ? `[Demo PDF export — plain text placeholder]\nFinancial Spreading Export — ${caseRef}\nGenerated: ${new Date().toISOString()}\n`
-      : `Case,Stage,Confidence\n${caseRef},Review,78%\n`;
-    downloadExportFile(`${caseRef}.${ext}`, body, mime);
+  const handleExport = (format: "PDF" | "CSV") => {
+    if (format === "PDF") {
+      buildCreditMemoPdf(caseRef).save(`${caseRef}.pdf`);
+    } else {
+      downloadExportFile(`${caseRef}.csv`, `Case,Stage,Confidence\n${caseRef},Review,78%\n`, "text/csv;charset=utf-8");
+    }
     setLastExport(`${format} · ${caseRef} · ${new Date().toLocaleTimeString()}`);
     setOpen(false);
     showActionToast(`Downloaded ${format} export for ${caseRef}`);
@@ -3786,7 +3916,7 @@ function ExportDropdown({ theme, caseRef }: { theme: FigmaTheme; caseRef: string
             overflow: "hidden",
           }}
         >
-          {(["PDF", "Excel"] as const).map((fmt) => (
+          {(["PDF", "CSV"] as const).map((fmt) => (
             <button
               key={fmt}
               type="button"
@@ -3804,7 +3934,7 @@ function ExportDropdown({ theme, caseRef }: { theme: FigmaTheme; caseRef: string
                 color: theme.text.primary,
               }}
             >
-              Export as {fmt}{fmt === "PDF" ? " (demo)" : ""}
+              Export as {fmt}
             </button>
           ))}
         </div>
@@ -4194,11 +4324,13 @@ function CreditMemoFullView({
   onClose,
   onSubmit,
   gate4Signed = false,
+  caseRef,
 }: {
   theme: FigmaTheme;
   onClose: () => void;
   onSubmit?: () => void;
   gate4Signed?: boolean;
+  caseRef: string;
 }) {
   const [expandedSections, setExpandedSections] = useCanvasState<string[]>("memoExpanded", ["rating"]);
   const [explainOpen, setExplainOpen] = useCanvasState<boolean>("memoExplainOpen", false);
@@ -4399,7 +4531,7 @@ function CreditMemoFullView({
                   { label: "Print preview", onClick: () => showActionToast("Opening print preview…") },
                 ]}
               />
-              <ExportDropdown theme={theme} caseRef="MEMO-REPORT" />
+              <ExportDropdown theme={theme} caseRef={caseRef} />
               <button
                 type="button"
                 onClick={onClose}
@@ -6609,6 +6741,7 @@ function CaseWorkspaceView({ theme }: { theme: FigmaTheme }) {
           onClose={() => setMemoOpen(false)}
           onSubmit={() => appendAudit({ kind: "gate4-sign" })}
           gate4Signed={signedGateActions.has("gate4-sign")}
+          caseRef={caseDef.caseRef}
         />
       )}
       {lastCreatedLabel && (
