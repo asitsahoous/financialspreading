@@ -10,7 +10,7 @@
  * 5 decline/table still stay on local fixture/session state — see
  * docs/KNOWN_ISSUES.md for what's left and why.
  */
-import { acosApi, type CaseResponse, type GateRecord } from "../api/client";
+import { acosApi, isLiveMode, type CaseResponse, type GateRecord } from "../api/client";
 
 export type BackendCaseRole = "walmart" | "northern-retail";
 
@@ -72,6 +72,16 @@ const inFlightCreates = new Map<BackendCaseRole, Promise<string>>();
  * the case itself now lives server-side).
  */
 export async function ensureBackendCase(role: BackendCaseRole): Promise<string> {
+  // No VITE_API_URL configured — don't attempt any network call at all.
+  // Without this, every caller here would fire a doomed fetch against the
+  // Vite dev server's own origin (no such route) on every case load,
+  // filling the console with errors for the "just npm run dev" demo path
+  // documented in DEMO_WALKTHROUGH.md. Callers already treat a rejected
+  // promise here as "stay in local-only mode" (see CaseWorkspaceView).
+  if (!isLiveMode) {
+    return Promise.reject(new Error("ACOS backend not configured (VITE_API_URL unset) — running in local-only demo mode."));
+  }
+
   const cached = readCachedCaseId(role);
   if (cached) return cached;
 

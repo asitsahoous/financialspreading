@@ -9,25 +9,34 @@ Phased by **priority and technical dependency**, not calendar time (team size/ve
 
 ## Progress
 
-### Checkpoint — 2026-07-03
+### Checkpoint — 2026-07-03 (session handoff)
 
-**What's real now (backend-persisted, survives reload + full backend restart, concurrency-safe):**
-- Case creation, document intake, Gate 1–5 sign-off (approve/override/reject/table) for the Walmart and Northern Retail demo cases
+**Read this first if you're picking this repo up fresh.** Everything below is committed and pushed to `origin/main`, HEAD is `d851587`, working tree is clean, all 24 Playwright e2e tests pass. See `docs/KNOWN_ISSUES.md`'s Progress log for full narrative detail on every item below (root causes, verification steps, exact commits).
+
+**What's real now** (backend-persisted via FastAPI+LangGraph, survives reload + full backend restart, concurrency-safe) for the Walmart and Northern Retail demo cases:
+- Case creation, document intake, Gate 1–5 sign-off (approve/override/reject/table)
 - The 6 core mapping fields (Total Assets, Cash & Equivalents, Receivables/net, Long-term Debt, Shareholders Equity, Revenue) — Trust Inspector accept/override persists for real
 - Collaborator Avatars show real gate-signer initials
-- Credit Memo PDF export produces a genuine PDF (verified `%PDF-1.3` header), not a text file
+- Credit Memo PDF export produces a genuine PDF (verified `%PDF-1.3` header), with the real case ref in the filename
+- `GET /api/v1/portfolio` now scans real cases (via the LangGraph checkpointer) instead of a hardcoded fixture — **but the frontend never calls this endpoint**; Command Center/InSight are still 100% fixture-driven (see "Deliberately deferred" below for why)
 
-**Infrastructure provisioned but not yet cut over:** a Supabase Postgres project (`financial-spreading-board`, us-east-1, id `xqygzqedhkgvyqqfreds`) exists for the LangGraph checkpointer, but the DB password was never retrievable via API — someone needs to grab it from the Supabase dashboard (Project Settings → Database) and paste it into `backend/.env`'s `DATABASE_URL`. Everything above has only been verified against local SQLite.
+**Not yet cut over:** a Supabase Postgres project (`financial-spreading-board`, us-east-1, id `xqygzqedhkgvyqqfreds`) is provisioned for the checkpointer, but its DB password isn't retrievable via API. **Action needed from a human:** get it from the Supabase dashboard (Project Settings → Database → Connection string, or reset it) and paste it into `backend/.env`'s `DATABASE_URL`. Until then, everything above runs on local SQLite (`backend/acos.db`, gitignored) — fully functional for dev/demo, just not the durable production store.
 
-**5 real bugs found and fixed along the way** (not just planned features — see [KNOWN_ISSUES.md Progress log](KNOWN_ISSUES.md#progress-log) for full detail on each): a checkpointer context-manager misuse and an async/sync mismatch that meant the backend had never completed a case end-to-end before this work; a gate off-by-one bug where every signature was recorded one gate behind; a concurrent-request race in the same read-modify-write pattern; and a toast race condition where a passive background sync failure could silently clobber a user-relevant toast (this one had been misdiagnosed as e2e flakiness for several rounds before being properly root-caused).
+**6 real bugs found and fixed this session** (this was a verification-heavy session — nearly every "wire X to the backend" step surfaced a genuine defect, not just a missing feature):
+1. `SqliteSaver`/`PostgresSaver.from_conn_string()` are `@contextmanager` generators — assigning them directly (original code) yields the wrapper object, not a usable saver, crashing startup.
+2. `api/router.py` awaited `graph.ainvoke()` (async) against a sync-only checkpointer — every case/gate call raised `NotImplementedError`. Together, (1) and (2) meant **the backend had never actually completed a case end-to-end before this session**, despite looking complete in the code.
+3. Gate off-by-one: every gate signature was recorded one gate behind (Sign Gate 2 recorded Gate 1, etc.) because the Walmart happy-path UI skips explicitly signing Gate 1, leaving the backend's LangGraph interrupt cursor one step out of sync with what the UI intended.
+4. A concurrent-request race in `sign_gate`/`receive_document`/`override_field`'s read-modify-write pattern — fixed with a per-`case_id` `asyncio.Lock`.
+5. A toast race condition: a single reactive effect toasted on *any* backend sync failure, including passive background reconciliation unrelated to whatever the user just clicked — could silently clobber a meaningful action toast. This had been misdiagnosed as e2e flakiness for 2 rounds before being root-caused.
+6. A SQLite cursor deadlock in the new Portfolio Sentinel scan — calling `graph.get_state()` while still iterating the `checkpointer.list()` generator shared the same connection and hung the server indefinitely.
 
-**Deliberately deferred, with reasons (not oversights):**
-- AutoWest/Costco/Target as real cases — explicitly documented as intentional demo-breadth placeholders; making them real means authoring new company narratives from scratch, a different kind of task than everything above
-- Splitting the 8,280-line frontend file — real value, but a mechanical refactor touching every line carries a different risk profile (a missed import silently breaks the whole app) than the verified, behavior-preserving fixes above
-- Real XLSX export, InSight Assist chat, ratio-trend computation, Portfolio Sentinel real aggregation — each is a net-new small/medium feature, not a fix to something existing
-- Phase 1 (real OCR/LLM extraction) and auth/RBAC — both need a vendor/provider decision and credentials from the user, not just implementation time
+**Deliberately deferred, with reasons (not oversights — don't "fix" these without re-reading why):**
+- AutoWest/Costco/Target as real cases, and wiring the frontend to the now-real portfolio endpoint — both explicitly documented as intentional demo-breadth shortcuts (`DEMO_WALKTHROUGH.md`). Making them real means authoring brand-new company narratives / would visually empty out the demo (only 1–2 real cases exist vs. the fixture's ~15) — a different kind of task than the fixes above, not a bug.
+- Splitting the 8,280-line `app/src/acos/FinancialSpreadingACOS.tsx` — real value, but a mechanical refactor touching every line has a different risk profile (a missed import silently breaks the whole app) than the verified, behavior-preserving fixes above. Don't rush it.
+- Real XLSX export, InSight Assist chat, ratio-trend computation from real data — each a net-new small/medium feature, not a fix to something existing.
+- Phase 1 (real OCR/LLM extraction) and auth/RBAC — both need a vendor/provider decision **and credentials from the user**, not just implementation time. Don't guess a vendor; ask first.
 
-**Everything above is committed and pushed to `origin/main`** (7 commits this session, most recent `abb5416`). All 24 Playwright e2e tests pass as of this checkpoint.
+**Suggested next step if continuing:** the natural, lowest-risk continuation is wiring the InSight tab to real portfolio data *for just Walmart/Northern Retail specifically* (not replacing the full fixture-driven Command Center), since that avoids the "empty demo" problem while still closing real ground. Otherwise, any of the deferred items above are fair game — just confirm the relevant decision (vendor/scope/content) before starting.
 
 ## Phase 0 — Foundation (blocks everything else)
 

@@ -11,6 +11,8 @@ A plain-language guide for presenting the demo. No engineering background requir
    npm install
    npm run dev
    ```
+   This alone is enough to present the demo — the app degrades cleanly to local-only mode with no backend running (a quiet console note, no visible errors, no failed requests).
+   - **Optional — live mode:** if `app/.env` has `VITE_API_URL` set (e.g. `http://localhost:8000`) and you separately run the backend (`cd backend && python main.py`), Gate 1–5 sign-off, document intake, and 6 core mapping-field corrections for **Walmart and Northern Retail specifically** persist to a real database instead of just this browser tab — see `docs/ROADMAP.md`'s checkpoint for exactly what's wired. Everything else in this walkthrough behaves identically either way.
 2. **Open your browser** to **http://localhost:5173**
 3. **Click Reset demo** — top-right of the tab bar, next to **+ Case**. Confirm when asked.
    - Do this **every time** you start a fresh walkthrough, or if buttons look greyed out / gates already signed.
@@ -150,9 +152,9 @@ Same fix — resolve the Total Assets exception first. The app will switch you t
 
 Your progress is saved in the browser for this session (`sessionStorage`). Gates you already signed cannot be signed twice. **Reset demo** clears everything and reloads the page.
 
-### "Export PDF downloaded a .txt file"
+### "Export as PDF downloads something odd"
 
-**Demo placeholder.** PDF export is labeled **"Export as PDF (demo)"** and downloads plain text, not a real PDF.
+It shouldn't — **PDF export is real** (genuine PDF bytes via jsPDF, not a text file). If it looks wrong, that's a bug, not a known placeholder.
 
 ### "InSight Assist chat doesn't really answer"
 
@@ -170,16 +172,17 @@ Ensure the Netlify SPA redirect is configured (`app/netlify.toml`). For local de
 
 ## What is real vs demo placeholder
 
-| Works fully (click and see state change) | Demo / placeholder only |
-|------------------------------------------|-------------------------|
-| All five human gates (sign-off → audit log) | No real backend or database |
-| Trust Inspector — Accept / Override / correction | PDF export → `.txt` file |
-| Real file upload (↑ Upload file) — actual filename + size captured | InSight Assist chat replies |
-| Lifecycle rail — stage traces, runtime log | Connector API calls (fixture data) |
-| SOP viewer — § links open Credit Policy | AutoWest, Costco, Target → Walmart template |
-| Validate Ratios tabs and sparklines | Case creation → nearest template |
-| Credit Memo modal, Gate 5 committee actions | Real OCR / agent processing |
-| Reset demo — full state wipe | Persistent login / multi-user |
+**Updated 2026-07-03** — as of this session, "real" has two tiers: things that work in the browser regardless of a backend, and things that are genuinely backend-persisted *when the backend is running with `VITE_API_URL` set* (see "Before you start" above). Full detail and exact scope: `docs/ROADMAP.md`'s checkpoint section.
+
+| Always real (no backend needed) | Real *only* in live mode, for Walmart/Northern Retail | Still demo / placeholder |
+|---|---|---|
+| Credit Memo PDF export — genuine PDF, not text | Case creation, document intake | InSight Assist chat replies |
+| Trust Inspector — Accept / Override UI flow | Gate 1–5 sign-off (incl. Decline/Table) | Connector API calls (fixture data) |
+| Real file upload — actual filename + size captured | 6 core mapping-field corrections (Total Assets, Cash & Equivalents, Receivables/net, Long-term Debt, Shareholders Equity, Revenue) | AutoWest, Costco, Target → Walmart template (intentional) |
+| Lifecycle rail — stage traces, runtime log | Portfolio Sentinel's backend scan (not yet surfaced in this UI) | Case creation → nearest template for other borrowers |
+| SOP viewer — § links open Credit Policy | | Real OCR / agent extraction (still deterministic/fixture) |
+| Validate Ratios tabs and sparklines | | Ratio trend sparkline values (hardcoded arrays) |
+| Reset demo — full state wipe (also clears the live-mode case pointer) | | |
 
 ---
 
