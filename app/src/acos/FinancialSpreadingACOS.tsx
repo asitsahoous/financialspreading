@@ -1543,7 +1543,10 @@ const MAPPING_CORE_ROWS: MappingRow[] = [
     auditId: "trace-8840-wmt-cash",
   },
   {
-    field: "Accounts Receivable",
+    // Name matches backend/graph/nodes/document_intel.py's FIELD_TEMPLATES
+    // exactly ("Receivables, net", not "Accounts Receivable") so this field
+    // is wireable — see BACKEND_WIRED_MAPPING_FIELDS in backendCase.ts.
+    field: "Receivables, net",
     value: "$6,210M",
     confidence: "high",
     agentId: "mapping",

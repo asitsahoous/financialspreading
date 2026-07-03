@@ -168,13 +168,24 @@ export async function fetchBackendDocuments(caseId: string): Promise<Record<stri
 /**
  * Persists a mapping accept/override to the real backend's Trust Inspector
  * endpoint (`POST /cases/{id}/overrides`). Field names are only wired for
- * fields that are known to exist on both sides — currently just "Total
- * Assets", the one exception seeded identically in both the frontend fixture
- * and the backend's `document_intel.py` (same field name, same seeded
- * $100K value) — see docs/KNOWN_ISSUES.md for why the broader mapping data
- * isn't wired yet (same fixture/backend mismatch as document intake).
+ * MAPPING_CORE_ROWS entries that exist under the exact same name in the
+ * backend's document_intel.py FIELD_TEMPLATES / mapping.py COA_MAP.
+ *
+ * The other ~134 rows in the Walmart spread (MAPPING_SYNTHETIC_FIELDS) are
+ * auto-generated filler used to pad the demo grid out to "138/140 fields" —
+ * they have no backend counterpart at all (the backend only models 24 real
+ * fields) and reconciling them would mean inventing ~110 more backend fields
+ * with no unique narrative of their own. Left local-only; see
+ * docs/KNOWN_ISSUES.md.
  */
-export const BACKEND_WIRED_MAPPING_FIELDS = new Set(["Total Assets"]);
+export const BACKEND_WIRED_MAPPING_FIELDS = new Set([
+  "Cash & Equivalents",
+  "Receivables, net",
+  "Total Assets",
+  "Long-term Debt",
+  "Shareholders Equity",
+  "Revenue",
+]);
 
 export async function overrideBackendField(
   caseId: string,
