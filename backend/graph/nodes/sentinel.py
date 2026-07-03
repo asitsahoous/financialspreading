@@ -1,111 +1,98 @@
 """
 Portfolio Sentinel Agent
-Scans the portfolio hourly. Detects covenant breaches, ratio deterioration,
-overdue filings. Returns alert cards for the Command Center.
-Runs independently — not part of the case graph.
+Scans all real cases the graph's checkpointer knows about. Detects covenant
+breaches and risk deterioration using each case's actual risk_agent output
+(health_score, risk_tier, covenant_breaches — see graph/nodes/risk.py).
+Returns alert cards for the Command Center / InSight portfolio view.
 """
 from __future__ import annotations
-from datetime import datetime, timezone
-from graph.nodes.utils import build_audit_event, now_iso
+from graph.nodes.utils import now_iso
 
 
-# Demo portfolio data — in production this reads from the case database
-PORTFOLIO_CASES = [
-    {
-        "case_id": "walmart",
-        "borrower": "Walmart Inc.",
-        "current_ratio": 0.79,
-        "de_ratio": 0.46,
-        "dscr": 1.65,
-        "covenant_current_ratio_min": 1.2,
-        "covenant_de_max": 0.55,
-        "health_score": 7.2,
-        "risk_tier": "Low Risk",
-        "stage": "review",
-        "exposure_m": 2000,
-    },
-    {
-        "case_id": "autowest",
-        "borrower": "AutoWest Motors",
-        "current_ratio": 0.85,
-        "de_ratio": 5.2,
-        "dscr": 0.95,
-        "covenant_current_ratio_min": 1.2,
-        "covenant_de_max": 3.0,
-        "health_score": 2.1,
-        "risk_tier": "High Risk",
-        "stage": "assessment",
-        "exposure_m": 12.4,
-    },
-    {
-        "case_id": "tesla-rental",
-        "borrower": "Tesla Rental Corp",
-        "current_ratio": 0.85,
-        "de_ratio": 3.8,
-        "dscr": 0.88,
-        "covenant_current_ratio_min": 1.2,
-        "covenant_de_max": 4.0,
-        "health_score": 4.2,
-        "risk_tier": "High Risk",
-        "stage": "review",
-        "exposure_m": 32.0,
-    },
-]
-
-
-def sentinel_scan() -> dict:
+def _distinct_thread_ids(graph) -> list[str]:
     """
-    Scan portfolio for covenant breaches and risk deterioration.
-    Returns alert list + portfolio KPIs.
+    checkpointer.list(None) returns checkpoints across *all* threads ordered
+    newest-first, so the first occurrence of each thread_id is that case's
+    most recent checkpoint. Fully materializes the list before returning —
+    calling graph.get_state() (a separate DB read) while still iterating
+    this generator reuses the same SQLite connection/cursor and deadlocks
+    the sync SqliteSaver; this was hit and confirmed during verification.
+    """
+    seen: list[str] = []
+    seen_set: set[str] = set()
+    for checkpoint_tuple in list(graph.checkpointer.list(None)):
+        thread_id = checkpoint_tuple.config.get("configurable", {}).get("thread_id")
+        if thread_id and thread_id not in seen_set:
+            seen_set.add(thread_id)
+            seen.append(thread_id)
+    return seen
+
+
+def _iter_latest_case_states(graph):
+    """Yields the current state.values for every distinct case the checkpointer has seen."""
+    for thread_id in _distinct_thread_ids(graph):
+        state = graph.get_state({"configurable": {"thread_id": thread_id}})
+        if state and state.values and state.values.get("case_id"):
+            yield state.values
+
+
+def sentinel_scan(graph) -> dict:
+    """
+    Scan every real case for covenant breaches and risk deterioration.
+    Returns alert list + portfolio KPIs, computed from actual case state
+    rather than a fixture — a case only has health_score/risk_tier/
+    covenant_breaches populated once its risk_agent node has run (i.e. past
+    Gate 2), so cases still in intake/mapping simply won't generate an alert
+    yet, which is correct: there's nothing to flag before risk assessment.
     """
     alerts = []
+    total_cases = 0
     total_breaches = 0
     high_risk_count = 0
+    open_exceptions = 0
 
-    for case in PORTFOLIO_CASES:
-        case_alerts = []
+    for values in _iter_latest_case_states(graph):
+        total_cases += 1
+        breaches = values.get("covenant_breaches") or []
+        risk_tier = values.get("risk_tier", "Moderate Risk")
+        open_exceptions += len(values.get("exceptions") or [])
 
-        if case["current_ratio"] < case["covenant_current_ratio_min"]:
-            total_breaches += 1
-            case_alerts.append(
-                f"Current Ratio {case['current_ratio']}x < covenant {case['covenant_current_ratio_min']}x"
-            )
-
-        if case["de_ratio"] > case["covenant_de_max"]:
-            total_breaches += 1
-            case_alerts.append(
-                f"D/E {case['de_ratio']}x > covenant {case['covenant_de_max']}x"
-            )
-
-        if case["dscr"] < 1.5:
-            case_alerts.append(f"DSCR {case['dscr']}x below 1.5x minimum")
-
-        if case["risk_tier"] == "High Risk":
+        if risk_tier == "High Risk":
             high_risk_count += 1
+        total_breaches += len(breaches)
 
-        if case_alerts:
-            alerts.append({
-                "case_id": case["case_id"],
-                "borrower": case["borrower"],
-                "breaches": case_alerts,
-                "severity": "critical" if case["risk_tier"] == "High Risk" else "warning",
-                "health_score": case["health_score"],
-                "risk_tier": case["risk_tier"],
-                "stage": case["stage"],
-                "exposure_m": case["exposure_m"],
-                "generated_at": now_iso(),
-                "agent": "sentinel",
-            })
+        if not breaches:
+            continue
 
-    # Portfolio KPIs
+        alerts.append({
+            "case_id": values["case_id"],
+            "borrower": values.get("borrower_name", "Unknown"),
+            "breaches": breaches,
+            "severity": "critical" if risk_tier == "High Risk" else "warning",
+            "health_score": values.get("health_score", 0.0),
+            "risk_tier": risk_tier,
+            "stage": values.get("current_stage", "intake"),
+            # Loan/exposure amount isn't modeled on CreditCaseState yet (no
+            # field captures requested/outstanding amount) — real cases
+            # report 0 here rather than a fabricated number; adding that
+            # field is tracked as follow-up in docs/KNOWN_ISSUES.md.
+            "exposure_m": 0,
+            "generated_at": now_iso(),
+            "agent": "sentinel",
+        })
+
     kpis = {
-        "total_cases": len(PORTFOLIO_CASES),
+        "total_cases": total_cases,
         "total_breaches": total_breaches,
         "high_risk_count": high_risk_count,
-        "agent_auto_pass_rate": 94,  # % of cases auto-passed without human exception
-        "open_exceptions_book": 12,
-        "agent_hours_saved_mtd": 312,
-        "total_exposure_b": sum(c["exposure_m"] for c in PORTFOLIO_CASES) / 1000,
+        "open_exceptions_book": open_exceptions,
+        # Not modeled: no historical/timing data is tracked yet to compute a
+        # real auto-pass rate or hours-saved estimate (these were narrative
+        # fixture numbers, not a defined formula, even conceptually). 0
+        # rather than a fabricated figure, matching exposure_m above.
+        "agent_auto_pass_rate": 0,
+        "agent_hours_saved_mtd": 0,
+        "total_exposure_b": 0,
     }
 
     return {

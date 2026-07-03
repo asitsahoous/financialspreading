@@ -310,12 +310,12 @@ async def override_field(case_id: str, body: FieldOverrideRequest, graph=Depends
 # ─── Portfolio ────────────────────────────────────────────────────────────────
 
 @router.get("/portfolio", response_model=PortfolioResponse)
-async def get_portfolio():
-    """Portfolio Sentinel scan — alerts and KPIs."""
-    return sentinel_scan()
+async def get_portfolio(graph=Depends(get_graph)):
+    """Portfolio Sentinel scan — alerts and KPIs, computed from real cases."""
+    return sentinel_scan(graph)
 
 
 @router.get("/portfolio/kpis")
-async def get_portfolio_kpis():
+async def get_portfolio_kpis(graph=Depends(get_graph)):
     """Agent-authored portfolio KPIs."""
-    return sentinel_scan()["kpis"]
+    return sentinel_scan(graph)["kpis"]
